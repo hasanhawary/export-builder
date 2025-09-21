@@ -1,0 +1,50 @@
+{
+  "name": "hasanhawary/export-builder",
+  "description": "A modular Laravel export builder around maatwebsite/excel (CSV/XLS/XLSX)",
+  "type": "library",
+  "license": "MIT",
+  "keywords": [
+    "laravel",
+    "export",
+    "excel",
+    "csv",
+    "xlsx",
+    "xls"
+  ],
+  "authors": [
+    { "name": "Hasan Hawary", "role": "Developer" }
+  ],
+  "require": {
+    "php": ">=8.0",
+    "illuminate/support": "^8.0 || ^9.0 || ^10.0 || ^11.0 || ^12.0",
+    "maatwebsite/excel": "^3.1"
+  },
+  "autoload": {
+    "psr-4": {
+      "HasanHawary\\ExportBuilder\\": "src/"
+    }
+  },
+  "scripts": {
+    "test": "../../vendor/bin/phpunit -c phpunit.xml"
+  },
+  "extra": {
+    "laravel": {
+      "providers": [
+        "HasanHawary\\ExportBuilder\\ExportBuilderServiceProvider"
+      ],
+      "aliases": {
+        "Export": "HasanHawary\\ExportBuilder\\Facades\\Export"
+      }
+    }
+  },
+  "homepage": "https://github.com/hasanhawary/export-builder",
+  "support": {
+    "issues": "https://github.com/hasanhawary/export-builder/issues",
+    "source": "https://github.com/hasanhawary/export-builder"
+  },
+  "config": {
+    "sort-packages": true
+  },
+  "minimum-stability": "dev",
+  "prefer-stable": true
+}
