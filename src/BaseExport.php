@@ -1,9 +1,7 @@
 <?php
 
-namespace HasanHawary\ExportBuilder\Types;
+namespace HasanHawary\ExportBuilder;
 
-
-use HasanHawary\ExportBuilder\HelperTrait;
 use Illuminate\Support\Arr;
 use Illuminate\Support\Str;
 use Maatwebsite\Excel\Concerns\FromArray;
@@ -66,12 +64,12 @@ abstract class BaseExport implements FromArray, WithMapping, WithHeadings
          *     'tags' => ['label' => 'text']
          * ],
          */
-        $this->relations = $config['relations'] ?? [];
+        $this->relations = $config['relations'];
 
         /**
          * Custom With (Eager Loading) Configuration:
          *
-         * Define additional relationships to eager load on the base query.
+         * Define additional relationships to an eager load on the base query.
          * Use this to prevent N+1 queries or to prepare nested data that may not
          * be explicitly described in the 'relations' configuration above.
          *
@@ -101,6 +99,7 @@ abstract class BaseExport implements FromArray, WithMapping, WithHeadings
          */
         $this->customWith = $config['customWith'] ?? [];
 
+
         /**
          * Additional Query Configuration:
          *
@@ -123,7 +122,6 @@ abstract class BaseExport implements FromArray, WithMapping, WithHeadings
          */
         $this->model = $config['model'];
 
-
         /**
          * Date Column Configuration:
          *
@@ -144,255 +142,279 @@ abstract class BaseExport implements FromArray, WithMapping, WithHeadings
      */
     public function array(): array
     {
-        $typedObject = is_array($this->model)
-            ? collect($this->model)
-            : (new $this->model)
-                ->when(!empty($this->customWith), fn($q) => $q->with($this->customWith))
-                ->when(!empty($this->relations['one']), function ($q) {
-                    foreach ($this->relations['one'] as $id => $relation) {
-                        $relation = array_key_first($relation);
-                        if ($relation) {
-                            $q->with($relation);
-                        }
-                    }
-                })
-                ->when(!empty($this->relations['many']), fn($q) => $q->with(array_keys($this->relations['many'])))
-                ->when(isset($this->filter['apply_date']) && $this->filter['apply_date'] && !empty($this->dateColumn), function ($q) {
-                    if (!empty($this->filter['start'])) {
-                        $q->whereDate($this->dateColumn, '>=', $this->filter['start']);
-                    }
-                    if (!empty($this->filter['end'])) {
-                        $q->whereDate($this->dateColumn, '<=', $this->filter['end']);
-                    }
-                })
-                ->when(!empty($this->filter['search']), function ($q) {
-                    $q->where(function ($q) {
-                        $searchColumns = Arr::where(array_keys($this->columns), fn($k) => !Str::contains($k, '.'));
-                        foreach ($searchColumns as $index => $column) {
-                            $q->orWhere($column, 'like', "%{$this->filter['search']}%");
-                        }
-                    });
-                })
-                ->when(!empty($this->additionalQuery), function ($q) {
-                    collect($this->additionalQuery)->each(function ($additional, $key) use ($q) {
-                        $q->$key($additional);
-                    });
-                })
-                ->when(isset($this->filter['conditions']) && !empty($this->filter['conditions']), fn($q) => $this->applyConditionFilter($q))
-                ->when(!empty($this->filter['order_by']), function ($q) {
-                    $q->orderBy($this->filter['order_by'], $this->filter['order_dir'] ?? 'asc');
-                })
-                ->when(!empty($this->filter['limit']) && is_numeric($this->filter['limit']), function ($q) {
-                    $q->limit((int)$this->filter['limit']);
-                })
-                ->get();
-
-        $oneRelations = $this->extractOneRelation($typedObject, $this->relations['one'] ?? []);
-
-        $manyRelations = [];
-        if (!empty($this->relations['many'])) {
-            foreach ($this->relations['many'] as $relationName => $details) {
-                $manyRelations[$relationName] = $this->extractManyRelation($typedObject, $relationName, $details);
-            }
-        }
-
-        $nativeArray = array_map(function ($object) use ($oneRelations, $manyRelations) {
-            if (!empty($oneRelations)) {
-                $object = array_merge($object, $this->mergeKeyedArrays($oneRelations[$object['id']] ?? []));
-            }
-
-            if (!empty($manyRelations)) {
-                $object = array_merge($object, $this->flattenArray($manyRelations[$object['id']] ?? []));
-            }
-
-            return $object;
-        }, $typedObject->toArray());
-
-        return $this->applyColumnFilter($nativeArray, $this->filter['type'] ?? 'all');
-    }
-
-    public function map($object): array
-    {
+        $columns = array_merge(array_keys($this->columns), array_keys($this->relations['one']));
+        $relations = $this->resolveRelationKeys($this->mergeKeyedArrays($this->relations['one']));
+        $relations = array_merge($relations, $this->resolveRelationKeys($this->applyColumnFilter($this->relations['many']['concat'])));
+        $relations = array_merge($relations, $this->resolveRelationKeys($this->relations['many']['list']));
+        $relations = array_merge($relations, $this->customWith);
+        $countRelations = $this->relations['many']['count'];
         $data = [];
 
-        foreach ($this->columns as $column => $type) {
-            // If a column path is nested (dot notation), keep the configured scalar type and let convertValue resolve the nested value.
-            $data[] = $this->convertValue((object)$object, $column, $type);
+        $query = $this->model::select($columns);
+
+        // Handle With methods based on give relations
+        when($countRelations !== [], fn() => $query->withCount(...$countRelations));
+        when($relations !== [], fn() => $query->with(...Arr::flatten($relations)));
+
+        // Handle Additional Query like closure functions
+        if (!empty($this->additionalQuery)) {
+            collect($this->additionalQuery)->each(fn($item) => $item($query));
         }
+
+        // Handle conditions filters
+        $this->appleDateFilter($query);
+        $this->applyAdvancedFilter($query);
+
+        //Fetch data with chunk to handle big data
+        $query->chunk(100, function ($dataChunk) use (&$data) {
+            $dataChunk->each(function ($item) use (&$data) {
+                $data[] = $item;
+            });
+        });
 
         return $data;
     }
 
+    public function map($object): array
+    {
+        $result = [];
+
+        // Handle columns
+        foreach ($this->columns as $column => $type) {
+            $result[$column] = $this->convertValue($object, $column, $type);
+        }
+
+        // Handle one-to-one relations
+        foreach ($this->relations['one'] as $relation) {
+            $oneRelation = $this->extractOneRelation($object, $relation);
+
+            $result[key($relation)] = current(Arr::where(Arr::dot($oneRelation), function ($value, $key) {
+                $strPart = Str::of($key)->explode('.');
+                return ($strPart->last() === 'id' && $strPart->count() === 1) || $strPart->last() !== 'id';
+            }));
+        }
+
+        // Handle one-to-many relations (concat)
+        foreach ($this->applyColumnFilter($this->relations['many']['concat']) as $relation => $details) {
+            $manyRelation = $this->extractManyRelation($object, $relation, $details);
+            $result[$relation] = implode(', ', Arr::where(Arr::dot($manyRelation), function ($value, $key) {
+                $strPart = Str::of($key)->explode('.');
+                return ($strPart->last() === 'id' && $strPart->count() === 1) || $strPart->last() !== 'id';
+            }));
+        }
+
+        //Handle one-to-many relations (many column)
+        foreach ($this->relations['many']['list'] as $relationName => $details) {
+            $flattenedData = $this->flattenArray($this->extractManyRelation($object, $relationName, $details));
+            $finalResult = collect($flattenedData)->reject(function ($value, $key) {
+                return str_ends_with($key, '_id') || is_array($value);
+            })->map(function ($value, $key) {
+                return resolveTrans($key) . ": " . (is_array($value) ? json_encode($value, JSON_THROW_ON_ERROR) : $value) . PHP_EOL;
+            })->implode(str_repeat('-', 20) . PHP_EOL);
+
+            $result[$relationName] = $finalResult;
+        }
+
+        //Handle one-to-many relations (count)
+        foreach ($this->relations['many']['count'] as $relationName) {
+            $result[$relationName] = $object->{Str::snake($relationName) . '_count'};
+        }
+
+        //Handle additional relations
+        foreach ($this->additionalQuery as $key => $value) {
+            $result[$key] = $object->$key ?? '';
+        }
+
+        //Resolve for last shape && handle column key
+        return $result;
+    }
+
     public function headings(): array
     {
-        $keys = array_keys($this->columns);
-        return collect($keys)
-            ->map(fn($item) => Str::replace('.', '_', $item))
-            ->map(fn($item) => $this->resolveTrans($item))
-            ->toArray();
+        $this->columns = $this->applyColumnFilter($this->columns);
+        $this->relations['one'] = $this->applyColumnFilter($this->relations['one']);
+        $this->relations['many']['concat'] = $this->applyColumnFilter($this->relations['many']['concat']);
+        $this->relations['many']['list'] = $this->applyColumnFilter($this->relations['many']['list'], 'many');
+        $this->relations['many']['count'] = $this->applyColumnFilter($this->relations['many']['count'], 'many');
+        $this->additionalQuery = $this->applyColumnFilter($this->additionalQuery, 'many');
+
+        $columnHeadings = array_keys($this->columns);
+        $oneRelationHeadings = array_keys($this->mergeKeyedArrays($this->relations['one']));
+        $concatRelationHeadings = array_keys(array_map(fn($relation) => array_keys($relation), $this->relations['many']['concat']));
+        $manyRelationHeadings = array_keys(array_map(fn($relation) => array_keys($relation), $this->relations['many']['list']));
+        $countRelationHeadings = $this->relations['many']['count'];
+        $additionalHeading = array_keys($this->additionalQuery);
+
+        $columns = array_merge($columnHeadings, $oneRelationHeadings, $concatRelationHeadings, $manyRelationHeadings, $countRelationHeadings, $additionalHeading);
+
+        return Arr::map($columns, fn($item) => $this->resolveTrans($item));
     }
 
     public function isEnabled(): true
     {
-        //Override and add your permission in every class
         return true;
     }
 
+    /*
+    |--------------------------------------------------------------------------
+    | Extract Relations Methods
+    |--------------------------------------------------------------------------
+    */
     private function extractOneRelation(mixed $parentEntity, array $relationMappings): array
     {
-        $result = [];
+        $extractedData = [];
+        foreach ($relationMappings as $relationName => $columnMappings) {
+            $relatedEntity = $parentEntity->$relationName;
 
-        if (empty($relationMappings)) {
-            return $result;
-        }
-
-        foreach ($relationMappings as $foreignKey => $relationMapping) {
-            $relationName = array_key_first($relationMapping);
-            $columns = $relationMapping[$relationName] ?? [];
-
-            foreach ($parentEntity->toArray() as $parent) {
-                $relatedObject = $parent[$relationName] ?? null;
-
-                if ($relatedObject) {
-                    $parentId = $parent['id'];
-                    $result[$parentId][] = collect($columns)
-                        ->mapWithKeys(function ($type, $column) use ($relatedObject, $relationName) {
-                            $key = $relationName . '_' . $column;
-                            return [$key => $this->convertValue((object)$relatedObject, $column, $type)];
-                        })
-                        ->toArray();
+            foreach ($columnMappings as $columnName => $columnType) {
+                if (is_array($columnType)) {
+                    $extractedData[$relationName][$columnName] = $this->extractOneRelation($relatedEntity, $columnType);
+                } else {
+                    $extractedData[$relationName][$columnName] = $this->convertValue($relatedEntity, $columnName, $columnType);
                 }
             }
         }
 
-        return $result;
+        return $extractedData;
     }
 
     private function extractManyRelation(mixed $object, string $relationName, array $details): array
     {
-        $result = [];
-        $type = array_key_first($details) ?? 'list';
-        $valueKey = $details[$type] ?? [];
-
-        foreach ($object->toArray() as $parent) {
-            $id = $parent['id'];
-            $items = $parent[$relationName] ?? [];
-
-            if ($type === 'count') {
-                $result[$id] = ['count' => count($items)];
-                continue;
+        $relatedDataSet = [];
+        foreach ($object->$relationName as $relatedObject) {
+            $relatedData = [];
+            foreach ($details as $relatedColumn => $type) {
+                if (is_array($type)) {
+                    foreach ($type as $nestedRelation => $nestedDetails) {
+                        $relatedData[$nestedRelation] = Arr::first($this->extractNestedRelation($relatedObject, $nestedRelation, $nestedDetails));
+                    }
+                } else {
+                    $relatedData[$relatedColumn] = $this->convertValue($relatedObject, $relatedColumn, $type);
+                }
             }
-
-            if ($type === 'list') {
-                $result[$id] = ['list' => collect($items)->pluck($valueKey)->toArray()];
-                continue;
-            }
-
-            if ($type === 'concat') {
-                $result[$id] = ['concat' => collect($items)->pluck($valueKey)->implode(' , ')];
-                continue;
-            }
+            $relatedDataSet[] = $relatedData;
         }
 
-        return $result;
+        return $relatedDataSet;
     }
 
     private function extractNestedRelation(mixed $relatedObject, ?string $nestedRelation, ?array $nestedDetails): array
     {
-        $result = [];
-
-        if ($nestedRelation && $nestedDetails) {
-            $nestedResult = collect($nestedDetails)
-                ->mapWithKeys(function ($type, $column) use ($relatedObject, $nestedRelation) {
-                    $key = $nestedRelation . '_' . $column;
-                    return [$key => $this->convertValue((object)$relatedObject?->$nestedRelation, $column, $type)];
-                })
-                ->toArray();
-
-            $result[] = $nestedResult;
+        if (is_array($relatedObject->$nestedRelation) && count($relatedObject->$nestedRelation) > 0 && is_object($relatedObject->$nestedRelation[0])) {
+            return $this->extractManyRelation($relatedObject, $nestedRelation, $nestedDetails);
         }
 
-        return $result;
+        return $this->extractOneRelation($relatedObject, [$nestedRelation => $nestedDetails]);
     }
 
+    /*
+    |--------------------------------------------------------------------------
+    | Resolve Display of Relations Methods
+    |--------------------------------------------------------------------------
+    */
     private function resolveRelationKeys(array $relations): array
     {
-        $results = [];
+        $selectedRelations = [];
+        collect($relations)->each(function ($relationValue, $relationName) use (&$selectedRelations) {
+            $selectedRelations[$relationName] = $this->guessRelationPattern($relationName, $relationValue);
+        });
 
-        foreach ($relations as $relation => $details) {
-            $key = array_key_first($details);
-            $results[$relation] = [
-                'type' => $key,
-                'name' => $details[$key] ?? null,
-            ];
-        }
-
-        return $results;
+        return array_values($selectedRelations);
     }
 
-    private function guessRelationPattern(string $relation, array $columns, ?string $parent): array|string
+    private function guessRelationPattern(string $relation, array $columns, ?string $parent = null): array|string
     {
-        $match = collect($columns)->filter(function ($v, $k) use ($relation) {
-            return Str::contains($k, '.') && Str::before($k, '.') === $relation;
-        })->toArray();
+        $nested = [];
+        $normalRelation = collect($columns)->filter(fn($r) => !is_array($r))->toArray();
+        $nestedRelations = collect($columns)->filter(fn($r) => is_array($r));
+        $patternColumns = implode(',', array_keys($normalRelation));
 
-        $columns = [];
-        foreach ($match as $key => $value) {
-            $columns[Str::after($key, '.')] = $value;
-        }
-
-        return $this->nestedPattern($columns, $parent);
-    }
-
-    private function nestedPattern(?array $nested, ?string $parent): array
-    {
-        $result = [];
-        foreach ($nested as $column => $type) {
-            $result[$parent ? $parent . '_' . $column : $column] = $type;
-        }
-
-        return $result;
-    }
-
-    private function applyColumnFilter(array $nativeArray, string $type): array
-    {
-        $filteredColumns = $this->columns;
-
-        // Allow explicit column selection via filter['columns']
-        if (!empty($this->filter['columns']) && is_array($this->filter['columns'])) {
-            $filteredColumns = Arr::only($filteredColumns, $this->filter['columns']);
-        }
-
-        if ($type !== 'all') {
-            $filteredColumns = Arr::where($filteredColumns, function ($v, $k) use ($type) {
-                return Str::contains($k, '.') || Str::contains($k, $type);
+        if ($nestedRelations->isNotEmpty()) {
+            $nestedRelations->each(function ($nestedRelation) use (&$nested, $relation) {
+                collect($nestedRelation)->each(function ($relationValue, $relationName) use (&$nested, $relation) {
+                    $nested[] = $this->guessRelationPattern($relationName, $relationValue, $relation);
+                });
             });
         }
 
-        return collect($nativeArray)->map(function ($object) use ($filteredColumns) {
-            $filteredData = [];
+        $basicRelation = "$relation:$patternColumns";
+        if ($parent) {
+            $nested = !empty($nested) ? $this->nestedPattern($nested, $parent) : "$relation:$patternColumns";
 
-            foreach ($filteredColumns as $column => $type) {
-                $value = $object;
-                if (Str::contains($column, '.')) {
-                    $paths = explode('.', $column);
-                    foreach ($paths as $path) {
-                        $value = $value[$path] ?? null;
-                    }
-                } else {
-                    $value = $object[$column] ?? null;
-                }
-                $filteredData[$column] = $value;
+            if (!is_array($nested) && $basicRelation === $nested) {
+                $basicRelation = [];
+                $nested = "$parent.$nested";
+            } else {
+                $basicRelation = "$parent.$basicRelation";
             }
+        }
 
-            return $filteredData;
-        })->toArray();
+        if (is_string($nested)) {
+            $basicRelation = $nested;
+        }
+
+        return is_array($nested) && !empty($nested) ? Arr::flatten($nested) : $basicRelation;
     }
 
-    private function applyConditionFilter($query): void
+    private function nestedPattern(?array $nested = [], ?string $parent = null): array
     {
-        foreach ($this->filter['conditions'] as $condition) {
-            $query->where($condition['key'], $condition['operation'], $condition['value']);
+        return $parent && !empty($nested) ? array_map(function ($item) use ($parent) {
+            return is_array($item) ? $this->nestedPattern($item, $parent) : "$parent.$item";
+        }, $nested) : $nested;
+    }
+
+    /*
+    |--------------------------------------------------------------------------
+    | Filter Methods
+    |--------------------------------------------------------------------------
+    */
+    private function applyColumnFilter(array $nativeArray, string $type = 'column'): array
+    {
+        if (empty($this->filter['column'])) {
+            return $nativeArray;
+        }
+
+        if (!isArrayIndex($nativeArray)) {
+            if ($type === 'many') {
+                return Arr::only($nativeArray, $this->filter['related'] ?? []);
+            }
+
+            return Arr::only($nativeArray, $this->filter['columns'] ?? []);
+        }
+
+        //write condition here
+        if ($type === 'many') {
+            foreach ($nativeArray as $key => $value) {
+                if (!in_array($value, $this->filter['related'] ?? [], true)) {
+                    unset($nativeArray[$key]);
+                }
+            }
+        }
+
+        return $nativeArray;
+    }
+
+    private function applyAdvancedFilter($query): void
+    {
+        if (isset($this->filter['advanced'])) {
+            collect($this->filter['advanced'])->each(function ($item) use ($query) {
+                if (array_key_exists($item->key, $this->relations['many']['concat'])) {
+                    $query->whereHas($item->key, fn($q) => $q->whereIn('id', Arr::wrap($item->value)));
+                } else {
+                    $query->whereIn($item->key, Arr::wrap($item->value));
+                }
+            });
+        }
+    }
+
+    protected function appleDateFilter($query): void
+    {
+        if (isset($this->filter['start'])) {
+            $query->whereDate($this->dateColumn, '>=', $this->filter['start']);
+        }
+
+        if (isset($this->filter['end'])) {
+            $query->whereDate($this->dateColumn, '<=', $this->filter['end']);
         }
     }
 }

@@ -13,7 +13,7 @@ class ExportBuilder
     /**
      * Default namespace fallback for export classes. Can be overridden via config('export.namespace').
      */
-    public const DEFAULT_NAMESPACE = 'HasanHawary\\ExportBuilder\\Types';
+    public const DEFAULT_NAMESPACE = 'App\\Tools\\Export';
 
     public function __construct(public array $filter)
     {
@@ -51,6 +51,7 @@ class ExportBuilder
                 'xls' => 'xls',
                 default => 'xlsx',
             };
+
             $excelFormat = match ($format) {
                 'csv' => \Maatwebsite\Excel\Excel::CSV,
                 'xls' => \Maatwebsite\Excel\Excel::XLS,

@@ -10,13 +10,13 @@ class ExportBuilderServiceProvider extends ServiceProvider
     {
         // Publish the default export.php config
         $this->publishes([
-            __DIR__ . '/config/export.php' => config_path('export.php'),
+            __DIR__ . '/../config/export.php' => config_path('export.php'),
         ], 'export-builder-config');
     }
 
     public function register(): void
     {
         // Merge package config
-        $this->mergeConfigFrom(__DIR__ . '/config/export.php', 'export');
+        $this->mergeConfigFrom(__DIR__ . '/../config/export.php', 'export');
     }
 }

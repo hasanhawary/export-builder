@@ -42,7 +42,7 @@ Configuration option available in config/export.php:
 ```php
 namespace App\Exports;
 
-use HasanHawary\ExportBuilder\Types\BaseExport;
+use HasanHawary\ExportBuilder\BaseExport;
 use App\Models\User;
 use App\Enum\User\UserGenderEnum;
 
