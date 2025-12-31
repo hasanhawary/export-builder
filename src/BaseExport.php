@@ -19,6 +19,8 @@ abstract class BaseExport implements FromArray, WithMapping, WithHeadings
     private string $dateColumn;
     private array $filter;
     private array $customWith;
+    private array $customSelect;
+
 
     public function __construct(array $config, array $filter)
     {
@@ -99,6 +101,20 @@ abstract class BaseExport implements FromArray, WithMapping, WithHeadings
          */
         $this->customWith = $config['customWith'] ?? [];
 
+        /**
+         * Custom Select Configuration:
+         *
+         * Specifies the columns to select on the base query.
+         * Helps reduce data load and improve query performance
+         * by avoiding selecting all columns.
+         *
+         * Must be an array compatible with Eloquent's select() method.
+         *
+         * Example:
+         * ['id', 'name', 'created_at']
+         */
+        $this->customSelect = $config['customSelect'] ?? [];
+
 
         /**
          * Additional Query Configuration:
@@ -150,11 +166,16 @@ abstract class BaseExport implements FromArray, WithMapping, WithHeadings
         $countRelations = $this->relations['many']['count'];
         $data = [];
 
-        $query = $this->model::select($columns);
+        $query = $this->model::select(array_merge($columns, $this->customSelect));
 
         // Handle With methods based on give relations
-        when($countRelations !== [], fn() => $query->withCount(...$countRelations));
-        when($relations !== [], fn() => $query->with(...Arr::flatten($relations)));
+        if (!empty($countRelations)) {
+            $query->withCount(...$countRelations);
+        }
+
+        if (!empty($relations)) {
+            $query->with(...Arr::flatten($relations));
+        }
 
         // Handle Additional Query like closure functions
         if (!empty($this->additionalQuery)) {
