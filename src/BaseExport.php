@@ -415,7 +415,7 @@ abstract class BaseExport implements FromArray, WithMapping, WithHeadings
         return $nativeArray;
     }
 
-    private function applyAdvancedFilter($query): void
+    public function applyAdvancedFilter($query): void
     {
         if (isset($this->filter['advanced'])) {
             collect($this->filter['advanced'])->each(function ($item) use ($query) {
@@ -428,7 +428,7 @@ abstract class BaseExport implements FromArray, WithMapping, WithHeadings
         }
     }
 
-    protected function appleDateFilter($query): void
+    public function appleDateFilter($query): void
     {
         if (isset($this->filter['start'])) {
             $query->whereDate($this->dateColumn, '>=', $this->filter['start']);
