@@ -183,7 +183,7 @@ abstract class BaseExport implements FromArray, WithMapping, WithHeadings
         }
 
         // Handle conditions filters
-        $this->appleDateFilter($query);
+        $this->applyDateFilter($query);
         $this->applyAdvancedFilter($query);
 
         //Fetch data with chunk to handle big data
@@ -428,7 +428,7 @@ abstract class BaseExport implements FromArray, WithMapping, WithHeadings
         }
     }
 
-    public function appleDateFilter($query): void
+    public function applyDateFilter($query): void
     {
         if (isset($this->filter['start'])) {
             $query->whereDate($this->dateColumn, '>=', $this->filter['start']);
