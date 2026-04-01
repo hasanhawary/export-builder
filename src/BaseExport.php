@@ -153,10 +153,13 @@ abstract class BaseExport implements FromArray, WithMapping, WithHeadings
         $this->filter = $filter;
     }
 
-    /**.
-     * @return array
+    /**
+     * Build the base Eloquent query with all eager loads, relations, and filters applied.
+     * Shared between array() (Excel) and pdfData() (PDF) — single source of truth for query + filter.
+     *
+     * @return \Illuminate\Database\Eloquent\Builder
      */
-    public function array(): array
+    protected function buildQuery(): \Illuminate\Database\Eloquent\Builder
     {
         $columns = array_merge(array_keys($this->columns), array_keys($this->relations['one']));
         $relations = $this->resolveRelationKeys($this->mergeKeyedArrays($this->relations['one']));
@@ -164,11 +167,10 @@ abstract class BaseExport implements FromArray, WithMapping, WithHeadings
         $relations = array_merge($relations, $this->resolveRelationKeys($this->relations['many']['list']));
         $relations = array_merge($relations, $this->customWith);
         $countRelations = $this->relations['many']['count'];
-        $data = [];
 
         $query = $this->model::select(array_merge($columns, $this->customSelect));
 
-        // Handle With methods based on give relations
+        // Handle With methods based on given relations
         if (!empty($countRelations)) {
             $query->withCount(...$countRelations);
         }
@@ -182,12 +184,24 @@ abstract class BaseExport implements FromArray, WithMapping, WithHeadings
             collect($this->additionalQuery)->each(fn($item) => $item($query));
         }
 
-        // Handle conditions filters
-        $this->applyDateFilter($query);
+        // Single filter hook — applyAdvancedFilter() is the only entry point for all filters.
+        // Default implementation in BaseExport handles date + advanced[].
+        // Subclasses that override applyAdvancedFilter() are fully responsible for ALL filters
+        // (including date), so no separate applyDateFilter() call is needed here.
         $this->applyAdvancedFilter($query);
 
+        return $query;
+    }
+
+    /**.
+     * @return array
+     */
+    public function array(): array
+    {
+        $data = [];
+
         //Fetch data with chunk to handle big data
-        $query->chunk(100, function ($dataChunk) use (&$data) {
+        $this->buildQuery()->chunk(100, function ($dataChunk) use (&$data) {
             $dataChunk->each(function ($item) use (&$data) {
                 $data[] = $item;
             });
@@ -415,8 +429,29 @@ abstract class BaseExport implements FromArray, WithMapping, WithHeadings
         return $nativeArray;
     }
 
+    /**
+     * Default filter implementation for generic models.
+     *
+     * Handles two things:
+     *   1. Date range via filter['start'] / filter['end'] on the configured dateColumn.
+     *   2. Advanced conditions via filter['advanced'] array.
+     *
+     * Subclasses that override this method take FULL responsibility for ALL filters,
+     * including date range. applyDateFilter() should NOT be called separately.
+     */
     public function applyAdvancedFilter($query): void
     {
+        // Date filter — runs only in the default implementation.
+        // Subclasses that override this (e.g. EventExport → Pipeline) handle date themselves.
+        if (isset($this->filter['start'])) {
+            $query->whereDate($this->dateColumn, '>=', $this->filter['start']);
+        }
+
+        if (isset($this->filter['end'])) {
+            $query->whereDate($this->dateColumn, '<=', $this->filter['end']);
+        }
+
+        // Advanced filter
         if (isset($this->filter['advanced'])) {
             collect($this->filter['advanced'])->each(function ($item) use ($query) {
                 if (array_key_exists($item->key, $this->relations['many']['concat'])) {
@@ -428,6 +463,10 @@ abstract class BaseExport implements FromArray, WithMapping, WithHeadings
         }
     }
 
+    /**
+     * @deprecated Use applyAdvancedFilter() override instead.
+     * Kept for backwards compatibility only — not called internally anymore.
+     */
     public function applyDateFilter($query): void
     {
         if (isset($this->filter['start'])) {
