@@ -2,6 +2,7 @@
 
 namespace HasanHawary\ExportBuilder;
 
+use Illuminate\Database\Eloquent\Relations\MorphTo;
 use Illuminate\Support\Arr;
 use Illuminate\Support\Str;
 use Maatwebsite\Excel\Concerns\FromArray;
@@ -153,10 +154,13 @@ abstract class BaseExport implements FromArray, WithMapping, WithHeadings
         $this->filter = $filter;
     }
 
-    /**.
-     * @return array
+    /**
+     * Build the base Eloquent query with all eager loads, relations, and filters applied.
+     * Shared between array() (Excel) and pdfData() (PDF) — single source of truth for query + filter.
+     *
+     * @return \Illuminate\Database\Eloquent\Builder
      */
-    public function array(): array
+    protected function buildQuery(): \Illuminate\Database\Eloquent\Builder
     {
         $columns = array_merge(array_keys($this->columns), array_keys($this->relations['one']));
         $relations = $this->resolveRelationKeys($this->mergeKeyedArrays($this->relations['one']));
@@ -164,11 +168,11 @@ abstract class BaseExport implements FromArray, WithMapping, WithHeadings
         $relations = array_merge($relations, $this->resolveRelationKeys($this->relations['many']['list']));
         $relations = array_merge($relations, $this->customWith);
         $countRelations = $this->relations['many']['count'];
-        $data = [];
+        $morphRelations = $this->buildMorphWithRelations();
 
-        $query = $this->model::select(array_merge($columns, $this->customSelect));
+        $query = $this->model::select(array_merge($columns, $this->customSelect, $this->resolveMorphTypeColumns()));
 
-        // Handle With methods based on give relations
+        // Handle With methods based on given relations
         if (!empty($countRelations)) {
             $query->withCount(...$countRelations);
         }
@@ -177,17 +181,38 @@ abstract class BaseExport implements FromArray, WithMapping, WithHeadings
             $query->with(...Arr::flatten($relations));
         }
 
+        // Morph relations: pass as a plain array
+        if (!empty($morphRelations)) {
+            $query->with($morphRelations);
+        }
+
+        if (!empty($this->customWith)) {
+            $query->with($this->customWith);
+        }
+
         // Handle Additional Query like closure functions
         if (!empty($this->additionalQuery)) {
             collect($this->additionalQuery)->each(fn($item) => $item($query));
         }
 
-        // Handle conditions filters
-        $this->applyDateFilter($query);
+        // Single filter hook — applyAdvancedFilter() is the only entry point for all filters.
+        // Default implementation in BaseExport handles date + advanced[].
+        // Subclasses that override applyAdvancedFilter() are fully responsible for ALL filters
+        // (including date), so no separate applyDateFilter() call is needed here.
         $this->applyAdvancedFilter($query);
 
+        return $query;
+    }
+
+    /**.
+     * @return array
+     */
+    public function array(): array
+    {
+        $data = [];
+
         //Fetch data with chunk to handle big data
-        $query->chunk(100, function ($dataChunk) use (&$data) {
+        $this->buildQuery()->chunk(100, function ($dataChunk) use (&$data) {
             $dataChunk->each(function ($item) use (&$data) {
                 $data[] = $item;
             });
@@ -213,6 +238,11 @@ abstract class BaseExport implements FromArray, WithMapping, WithHeadings
                 $strPart = Str::of($key)->explode('.');
                 return ($strPart->last() === 'id' && $strPart->count() === 1) || $strPart->last() !== 'id';
             }));
+        }
+
+        // Handle morph relations
+        foreach ($this->relations['morph'] ?? [] as $foreignKey => $morphConfig) {
+            $result[$foreignKey] = $this->extractMorphRelation($object, $foreignKey, $morphConfig);
         }
 
         // Handle one-to-many relations (concat)
@@ -261,12 +291,13 @@ abstract class BaseExport implements FromArray, WithMapping, WithHeadings
 
         $columnHeadings = array_keys($this->columns);
         $oneRelationHeadings = array_keys($this->mergeKeyedArrays($this->relations['one']));
+        $morphHeadings = array_keys($this->relations['morph'] ?? []);
         $concatRelationHeadings = array_keys(array_map(fn($relation) => array_keys($relation), $this->relations['many']['concat']));
         $manyRelationHeadings = array_keys(array_map(fn($relation) => array_keys($relation), $this->relations['many']['list']));
         $countRelationHeadings = $this->relations['many']['count'];
         $additionalHeading = array_keys($this->additionalQuery);
 
-        $columns = array_merge($columnHeadings, $oneRelationHeadings, $concatRelationHeadings, $manyRelationHeadings, $countRelationHeadings, $additionalHeading);
+        $columns = array_merge($columnHeadings, $oneRelationHeadings, $morphHeadings, $concatRelationHeadings, $manyRelationHeadings, $countRelationHeadings, $additionalHeading);
 
         return Arr::map($columns, fn($item) => $this->resolveTrans($item));
     }
@@ -274,6 +305,78 @@ abstract class BaseExport implements FromArray, WithMapping, WithHeadings
     public function isEnabled(): true
     {
         return true;
+    }
+
+    /*
+    |--------------------------------------------------------------------------
+    | Morph Relation Handling
+    |--------------------------------------------------------------------------
+    |
+    | Config shape:
+    |
+    | 'morph' => [
+    |     'sourceable_id' => [                        // FK column (used as heading key)
+    |         'relation'  => 'sourceable',            // Eloquent morph method name
+    |         'column'    => 'name',                  // Which column to display in the cell
+    |         'models'    => [                        // Optional: per-type column constraints
+    |             Campaign::class   => ['id', 'name'],
+    |             Sponsor::class    => ['id', 'name'],
+    |         ],
+    |     ],
+    | ],
+    */
+    private function resolveMorphTypeColumns(): array
+    {
+        $typeColumns = [];
+
+        foreach ($this->relations['morph'] ?? [] as $foreignKey => $morphConfig) {
+            // e.g. 'sourceable' → 'sourceable_id' , 'sourceable' → 'sourceable_type'
+            $typeColumns[] = $morphConfig['relation'] . '_id';
+            $typeColumns[] = $morphConfig['relation'] . '_type';
+        }
+
+        return array_unique($typeColumns);
+    }
+
+    /**
+     * Build MorphTo eager loads using MorphTo::constrain() for per-type column constraints,
+     * or plain relation name when no per-type models are defined.
+     */
+    private function buildMorphWithRelations(): array
+    {
+        $withs = [];
+
+        foreach ($this->relations['morph'] ?? [] as $foreignKey => $morphConfig) {
+            $relationName = $morphConfig['relation'];
+            $withs[] = $relationName;
+        }
+
+        return $withs;
+    }
+
+    /**
+     * Extract the display value from a morph relation on a given object.
+     *
+     * Falls back gracefully to null if the relation is not loaded or is null.
+     */
+    private function extractMorphRelation(mixed $object, string $foreignKey, array $morphConfig): mixed
+    {
+        $relationName = $morphConfig['relation'];
+        $column       = $morphConfig['column'];
+        $fallback     = $morphConfig['fallback'] ?? null;
+
+        $relatedEntity = $object->$relationName;
+
+        if ($relatedEntity === null) {
+            return $fallback;
+        }
+
+        // Support dot-notation for nested access e.g. 'category.name'
+        if (Str::contains($column, '.')) {
+            return data_get($relatedEntity, $column, $fallback);
+        }
+
+        return $this->convertValue($relatedEntity, $column, $morphConfig['type'] ?? 'text');
     }
 
     /*
@@ -415,8 +518,29 @@ abstract class BaseExport implements FromArray, WithMapping, WithHeadings
         return $nativeArray;
     }
 
+    /**
+     * Default filter implementation for generic models.
+     *
+     * Handles two things:
+     *   1. Date range via filter['start'] / filter['end'] on the configured dateColumn.
+     *   2. Advanced conditions via filter['advanced'] array.
+     *
+     * Subclasses that override this method take FULL responsibility for ALL filters,
+     * including date range. applyDateFilter() should NOT be called separately.
+     */
     public function applyAdvancedFilter($query): void
     {
+        // Date filter — runs only in the default implementation.
+        // Subclasses that override this (e.g. EventExport → Pipeline) handle date themselves.
+        if (isset($this->filter['start'])) {
+            $query->whereDate($this->dateColumn, '>=', $this->filter['start']);
+        }
+
+        if (isset($this->filter['end'])) {
+            $query->whereDate($this->dateColumn, '<=', $this->filter['end']);
+        }
+
+        // Advanced filter
         if (isset($this->filter['advanced'])) {
             collect($this->filter['advanced'])->each(function ($item) use ($query) {
                 if (array_key_exists($item->key, $this->relations['many']['concat'])) {
@@ -428,6 +552,10 @@ abstract class BaseExport implements FromArray, WithMapping, WithHeadings
         }
     }
 
+    /**
+     * @deprecated Use applyAdvancedFilter() override instead.
+     * Kept for backwards compatibility only — not called internally anymore.
+     */
     public function applyDateFilter($query): void
     {
         if (isset($this->filter['start'])) {
@@ -437,5 +565,28 @@ abstract class BaseExport implements FromArray, WithMapping, WithHeadings
         if (isset($this->filter['end'])) {
             $query->whereDate($this->dateColumn, '<=', $this->filter['end']);
         }
+    }
+
+    public function pdfView(): string
+    {
+        return 'export::pdf.export';
+    }
+
+    public function pdfData(): array
+    {
+        $records = $this->buildQuery()->get();
+
+        // Get child class short name without "Export"
+        $type = class_basename(static::class);
+        $type = Str::plural(Str::snake(Str::replaceLast('Export', '', $type)));
+
+        // Example: TicketExport => tickets_title
+        $title = __("export::pdf.{$type}_title");
+
+        return [
+            'title'   => $title,
+            'columns' => array_map(fn ($h) => ['label' => $h, 'width' => 'auto'], $this->headings()),
+            'rows'    => $records->map(fn ($r) => array_values($this->map($r)))->toArray(),
+        ];
     }
 }

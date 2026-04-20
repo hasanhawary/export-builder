@@ -62,10 +62,10 @@ trait HelperTrait
     public function resolveTrans(mixed $trans = null): string
     {
         $key = Str::snake(Str::lower($trans));
-
-        return Str::startsWith(__("api.$key"), 'api.')
+        $transFile = config('export.trans_file');
+        return Str::startsWith(__("$transFile.$key"), "$transFile.")
             ? $trans
-            : __("api.$key");
+            : __("$transFile.$key");
     }
 
     /**

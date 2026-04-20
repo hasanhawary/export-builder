@@ -13,6 +13,7 @@ Lightweight, framework-friendly export generation for Laravel powered by maatweb
 - Zero boilerplate: focus on a simple config array, not Excel internals.
 - Convention over configuration: resolves exports by page name and namespace.
 - Powerful mapping: convert types (date, datetime, int, money, booleans), translate headings, and resolve enums.
+- PDF Support: Generate beautiful PDF reports using Blade templates and mPDF.
 - Relations aware: eager-load one/many relations, flatten nested data, count/list/concat children.
 - Production-ready: safe file names, error logging, and HTTP responses that Just Work.
 
@@ -89,7 +90,7 @@ public function downloadUsers()
 {
     $filter = [
         'page' => 'user',   // resolves to App\\Exports\\UserExport if config('export.namespace') = 'App\\\\Exports'
-        'format' => 'xlsx', // csv | xlsx | xls (default: xlsx)
+        'format' => 'xlsx', // csv | xlsx | xls | pdf (default: xlsx)
         // Optional
         // 'filename' => 'users_report',
         // 'timestamp' => '2025-09-21_120000',
@@ -102,6 +103,43 @@ public function downloadUsers()
 
 ---
 
+## 📄 PDF Exports
+To support PDF generation, your export class must implement the `pdfView()` method and may optionally provide data and a custom data key.
+
+```php
+class UserExport extends BaseExport
+{
+    // ... same as before
+
+    public function pdfView(): string
+    {
+        return 'exports.users'; // path to your blade view
+    }
+
+    public function pdfData(): array
+    {
+        // Optional: Custom data for the PDF template. 
+        // If not provided, it will use the default mapped array.
+        return $this->array();
+    }
+    
+    public function pdfDataKey(): string
+    {
+        // Optional: The key used to pass data to the view. 
+        // Default: 'data'
+        return 'users';
+    }
+}
+```
+
+The PDF view receives:
+- `$data`: The collection of items (using `pdfDataKey` if provided).
+- `$start` & `$end`: Carbon instances of the date filter.
+- `$settings`: Array of PDF settings (resolved via config or resolver).
+- All items in your `$filter` array.
+
+---
+
 ## 🔧 Configuration
 Publish the config and point the namespace to your preferred location:
 
@@ -109,6 +147,14 @@ Publish the config and point the namespace to your preferred location:
 // config/export.php
 return [
     'namespace' => 'App\\Exports',
+    
+    'pdf' => [
+        'settings' => [
+            'logo_url' => 'https://example.com/logo.png',
+        ],
+        // Dynamically resolve settings (e.g., from DB or another service)
+        'settings_resolver' => [App\Resolvers\PdfSettingsResolver::class, 'resolve'],
+    ],
 ];
 ```
 
@@ -174,7 +220,7 @@ If it returns false, the request responds with 403.
 ---
 
 ## 🧾 File Names & Formats
-- format: csv, xlsx, or xls (default xlsx)
+- format: csv, xlsx, xls, or pdf (default xlsx)
 - filename: base name; defaults to page
 - timestamp: defaults to current Ymd_His
 The final file name is slugified as {filename}_{timestamp}.{ext}.
