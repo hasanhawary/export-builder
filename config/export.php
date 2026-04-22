@@ -21,7 +21,7 @@ return [
     | Dynamic settings can be resolved using settings_resolver.
     |
     */
-    'trans_file' => 'export::api',
+    'trans_file' => 'export',
 
 
     /*
