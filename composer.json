@@ -12,12 +12,15 @@
     "xls"
   ],
   "authors": [
-    { "name": "Hasan Hawary", "role": "Developer" }
+    {
+      "name": "Hasan Hawary",
+      "role": "Developer"
+    }
   ],
   "require": {
-    "php": ">=8.0",
-    "illuminate/support": "^8.0 || ^9.0 || ^10.0 || ^11.0 || ^12.0",
-    "maatwebsite/excel": "^3.1"
+    "php": "^8.2",
+    "illuminate/support": "^10.0 || ^11.0 || ^12.0 || ^13.0",
+    "maatwebsite/excel": "^3.1 || ^4.0"
   },
   "autoload": {
     "psr-4": {
@@ -25,7 +28,7 @@
     }
   },
   "scripts": {
-    "test": "../../vendor/bin/phpunit -c phpunit.xml"
+    "test": "vendor/bin/phpunit"
   },
   "extra": {
     "laravel": {
@@ -45,6 +48,6 @@
   "config": {
     "sort-packages": true
   },
-  "minimum-stability": "dev",
+  "minimum-stability": "stable",
   "prefer-stable": true
 }
