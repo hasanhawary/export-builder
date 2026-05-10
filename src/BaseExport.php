@@ -2,6 +2,7 @@
 
 namespace HasanHawary\ExportBuilder;
 
+use App\Trait\Global\AdvancedFilter;
 use Illuminate\Database\Eloquent\Relations\MorphTo;
 use Illuminate\Support\Arr;
 use Illuminate\Support\Str;
@@ -11,7 +12,7 @@ use Maatwebsite\Excel\Concerns\WithMapping;
 
 abstract class BaseExport implements FromArray, WithMapping, WithHeadings
 {
-    use HelperTrait;
+    use HelperTrait, AdvancedFilter;
 
     private array $columns;
     private array $relations;
@@ -21,6 +22,7 @@ abstract class BaseExport implements FromArray, WithMapping, WithHeadings
     private array $filter;
     private array $customWith;
     private array $customSelect;
+    protected array $filterRelations;
 
 
     public function __construct(array $config, array $filter)
@@ -152,6 +154,13 @@ abstract class BaseExport implements FromArray, WithMapping, WithHeadings
          * Set the filter based on the provided configuration.
          */
         $this->filter = $filter;
+
+        /**
+         * Filter Configuration:
+         *
+         * Set the filter based on the provided configuration.
+         */
+        $this->filterRelations = $config['filterRelations'] ?? [];
     }
 
     /**
