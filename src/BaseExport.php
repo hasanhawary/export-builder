@@ -2,7 +2,6 @@
 
 namespace HasanHawary\ExportBuilder;
 
-use App\Trait\Global\AdvancedFilter;
 use Illuminate\Database\Eloquent\Relations\MorphTo;
 use Illuminate\Support\Arr;
 use Illuminate\Support\Str;
@@ -160,7 +159,7 @@ abstract class BaseExport implements FromArray, WithMapping, WithHeadings
          *
          * Set the filter based on the provided configuration.
          */
-        $this->filterRelations = $config['filterRelations'] ?? [];
+        $this->filterRelations = $config['filter_relations'] ?? [];
     }
 
     /**
@@ -204,10 +203,7 @@ abstract class BaseExport implements FromArray, WithMapping, WithHeadings
             collect($this->additionalQuery)->each(fn($item) => $item($query));
         }
 
-        // Single filter hook — applyAdvancedFilter() is the only entry point for all filters.
-        // Default implementation in BaseExport handles date + advanced[].
-        // Subclasses that override applyAdvancedFilter() are fully responsible for ALL filters
-        // (including date), so no separate applyDateFilter() call is needed here.
+        $this->applyDateFilter($query);
         $this->applyAdvancedFilter($query);
 
         return $query;
@@ -539,31 +535,12 @@ abstract class BaseExport implements FromArray, WithMapping, WithHeadings
      */
     public function applyAdvancedFilter($query): void
     {
-        // Date filter — runs only in the default implementation.
-        // Subclasses that override this (e.g. EventExport → Pipeline) handle date themselves.
-        if (isset($this->filter['start'])) {
-            $query->whereDate($this->dateColumn, '>=', $this->filter['start']);
-        }
-
-        if (isset($this->filter['end'])) {
-            $query->whereDate($this->dateColumn, '<=', $this->filter['end']);
-        }
-
-        // Advanced filter
-        if (isset($this->filter['advanced'])) {
-            collect($this->filter['advanced'])->each(function ($item) use ($query) {
-                if (array_key_exists($item->key, $this->relations['many']['concat'])) {
-                    $query->whereHas($item->key, fn($q) => $q->whereIn('id', Arr::wrap($item->value)));
-                } else {
-                    $query->whereIn($item->key, Arr::wrap($item->value));
-                }
-            });
-        }
+        $this->applyAdvanced($query);
     }
 
     /**
-     * @deprecated Use applyAdvancedFilter() override instead.
-     * Kept for backwards compatibility only — not called internally anymore.
+     * @param $query
+     * @return void
      */
     public function applyDateFilter($query): void
     {

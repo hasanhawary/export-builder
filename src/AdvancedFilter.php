@@ -68,7 +68,11 @@ trait AdvancedFilter
      *   ],
      */
 
-    public function applyAdvancedFilter(Builder $query): Static
+    /**
+     * @param Builder $query
+     * @return $this|Builder
+     */
+    public function applyAdvanced(Builder $query)
     {
         $advancedFilters = $this->filter['advanced'] ?? [];
 
@@ -121,11 +125,10 @@ trait AdvancedFilter
                 }
 
             }catch (\Exception $e) {
-                abort(400, __('api.record_not_found'));
             }
         });
 
-        return $this;
+        return $query;
     }
 
     private function getAllowedColumns(Builder $query): array
@@ -134,5 +137,5 @@ trait AdvancedFilter
             ->getSchemaBuilder()
             ->getColumnListing($query->getModel()->getTable());
     }
-
 }
+
