@@ -11,7 +11,7 @@ use Maatwebsite\Excel\Concerns\WithMapping;
 
 abstract class BaseExport implements FromArray, WithMapping, WithHeadings
 {
-    use HelperTrait, AdvancedFilter;
+    use HelperTrait, AdvancedFilter, CustomRelationTrait;
 
     private array $columns;
     private array $relations;
@@ -145,7 +145,7 @@ abstract class BaseExport implements FromArray, WithMapping, WithHeadings
          *
          * Set the date column based on the provided configuration.
          */
-        $this->dateColumn = $config['date_column'] ?? 'created_at';
+        $this->dateColumn =  $config['dateColumn'] ?? $config['date_column'] ?? 'created_at';
 
         /**
          * Filter Configuration:
@@ -159,7 +159,7 @@ abstract class BaseExport implements FromArray, WithMapping, WithHeadings
          *
          * Set the filter based on the provided configuration.
          */
-        $this->filterRelations = $config['filter_relations'] ?? [];
+        $this->filterRelations = $config['filterRelations'] ?? $config['filter_relations'] ?? [];
     }
 
     /**
@@ -172,13 +172,27 @@ abstract class BaseExport implements FromArray, WithMapping, WithHeadings
     {
         $columns = array_merge(array_keys($this->columns), array_keys($this->relations['one']));
         $relations = $this->resolveRelationKeys($this->mergeKeyedArrays($this->relations['one']));
-        $relations = array_merge($relations, $this->resolveRelationKeys($this->applyColumnFilter($this->relations['many']['concat'])));
+        $relations = array_merge($relations, $this->resolveRelationKeys($this->applyColumnFilter($this->relations['many']['concat'], 'many')));
         $relations = array_merge($relations, $this->resolveRelationKeys($this->relations['many']['list']));
         $relations = array_merge($relations, $this->customWith);
+
+        // Add custom relations from CustomRelationTrait if used
+        $customRelations = $this->customRelations();
+        if (!empty($customRelations)) {
+            $relations = array_merge($relations, array_keys($customRelations));
+        }
+
         $countRelations = $this->relations['many']['count'];
         $morphRelations = $this->buildMorphWithRelations();
 
-        $query = $this->model::select(array_merge($columns, $this->customSelect, $this->resolveMorphTypeColumns()));
+        $selectColumns = array_merge($columns, $this->customSelect, $this->resolveMorphTypeColumns());
+
+        // Automatically detect and add foreign keys for all relations if customSelect is used
+        if (!empty($this->customSelect)) {
+            $selectColumns = array_merge($selectColumns, $this->detectForeignKeys($relations));
+        }
+
+        $query = $this->model::select(array_unique($selectColumns));
 
         // Handle With methods based on given relations
         if (!empty($countRelations)) {
@@ -282,6 +296,14 @@ abstract class BaseExport implements FromArray, WithMapping, WithHeadings
         }
 
         //Resolve for last shape && handle column key
+        if (!empty($this->customRelations())) {
+            $result = collect($result)
+                ->reject(fn($value, $key) => str_ends_with($key, '_id'))
+                ->all();
+
+            return array_merge($result, $this->mapRelations($object));
+        }
+
         return $result;
     }
 
@@ -304,7 +326,17 @@ abstract class BaseExport implements FromArray, WithMapping, WithHeadings
 
         $columns = array_merge($columnHeadings, $oneRelationHeadings, $morphHeadings, $concatRelationHeadings, $manyRelationHeadings, $countRelationHeadings, $additionalHeading);
 
-        return Arr::map($columns, fn($item) => $this->resolveTrans($item));
+        $baseHeadings = Arr::map($columns, fn($item) => $this->resolveTrans($item));
+
+        if (!empty($this->customRelations())) {
+            $baseHeadings = collect($baseHeadings)
+                ->reject(fn($value) => str_ends_with($value, '_id'))
+                ->all();
+
+            return array_merge($baseHeadings, $this->headingRelations());
+        }
+
+        return $baseHeadings;
     }
 
     public function isEnabled(): true
@@ -574,5 +606,34 @@ abstract class BaseExport implements FromArray, WithMapping, WithHeadings
             'columns' => array_map(fn ($h) => ['label' => $h, 'width' => 'auto'], $this->headings()),
             'rows'    => $records->map(fn ($r) => array_values($this->map($r)))->toArray(),
         ];
+    }
+
+    /**
+     * Detect foreign keys for given relations to ensure they are selected.
+     */
+    private function detectForeignKeys(array $relations): array
+    {
+        $keys = [];
+        $model = new $this->model;
+
+        foreach ($relations as $relation) {
+            // Only handle first level relations for foreign key detection
+            $baseRelation = explode('.', $relation)[0];
+
+            if (method_exists($model, $baseRelation)) {
+                try {
+                    $relInstance = $model->$baseRelation();
+                    if (method_exists($relInstance, 'getForeignKeyName')) {
+                        $keys[] = $relInstance->getForeignKeyName();
+                    } elseif (method_exists($relInstance, 'getForeignKey')) {
+                        $keys[] = $relInstance->getForeignKey();
+                    }
+                } catch (\Exception $e) {
+                    // Skip if relation cannot be initialized
+                }
+            }
+        }
+
+        return array_filter(array_unique($keys));
     }
 }

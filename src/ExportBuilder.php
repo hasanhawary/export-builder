@@ -83,12 +83,9 @@ class ExportBuilder
         $viewName = $exportObject->pdfView();
         $settings = $this->resolvePdfSettings();
 
-        $dataKey = method_exists($exportObject, 'pdfDataKey') ? $exportObject->pdfDataKey() : 'data';
-
         $pdfData = array_merge(
             $this->filter,
             [
-                $dataKey     => $data,
                 'data'       => $data,
                 'start' => !empty($this->filter['start']) ? Carbon::parse($this->filter['start']) : null,
                 'end'   => !empty($this->filter['end'])   ? Carbon::parse($this->filter['end'])   : null,

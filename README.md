@@ -5,17 +5,17 @@
 [![PHP Version](https://img.shields.io/packagist/php-v/hasanhawary/export-builder.svg)](https://packagist.org/packages/hasanhawary/export-builder)
 [![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
-Lightweight, framework-friendly export generation for Laravel powered by maatwebsite/excel. Define tiny export classes and trigger CSV/XLS/XLSX downloads with built-in filtering, relations, and smart value formatting.
+**Export Builder** is a powerful, configuration-driven export engine for Laravel. Stop writing boilerplate Excel logic and start defining exports as simple, reusable configurations. Powered by `maatwebsite/excel` and `mpdf`, it handles complex Eloquent relations, polymorphic data, and advanced filtering with ease.
 
 ---
 
 ## ✨ Why Export Builder?
-- Zero boilerplate: focus on a simple config array, not Excel internals.
-- Convention over configuration: resolves exports by page name and namespace.
-- Powerful mapping: convert types (date, datetime, int, money, booleans), translate headings, and resolve enums.
-- PDF Support: Generate beautiful PDF reports using Blade templates and mPDF.
-- Relations aware: eager-load one/many relations, flatten nested data, count/list/concat children.
-- Production-ready: safe file names, error logging, and HTTP responses that Just Work.
+- **Zero Boilerplate**: Define your export structure in a simple `$config` array.
+- **Relation Powerhouse**: Deeply nested relations, polymorphic support, and collection aggregations (count, list, concat) out of the box.
+- **Advanced Filtering**: Complex "search-like" filtering on main models and relations without writing a single `where` clause.
+- **Smart Formatting**: Automatic type conversion for dates, money, enums, booleans, and class paths.
+- **PDF & Excel**: Generate beautiful PDF reports or chunked Excel downloads using the same logic.
+- **Production Ready**: Built-in chunked processing for large datasets to keep memory usage low.
 
 ---
 
@@ -25,28 +25,18 @@ Lightweight, framework-friendly export generation for Laravel powered by maatweb
 composer require hasanhawary/export-builder
 ```
 
-The package auto-discovers its service provider. Optionally publish the default configuration to config/export.php:
-
+Publish the configuration:
 ```bash
 php artisan vendor:publish --tag=export-builder-config
 ```
-
-Configuration option available in config/export.php:
-- namespace: Default is `HasanHawary\\ExportBuilder\\Types`. Change it e.g. to `App\\Exports` to keep exports inside your app.
 
 ---
 
 ## ⚡ Quick Start
 
-1) Create an export class under your namespace. The class name must be `{Page}Export` (StudlyCase of the `page` filter). Example: a User report export:
+1) Define an export class (e.g., `App\Tools\Export\UserExport`):
 
 ```php
-namespace App\Exports;
-
-use HasanHawary\ExportBuilder\BaseExport;
-use App\Models\User;
-use App\Enum\User\UserGenderEnum;
-
 class UserExport extends BaseExport
 {
     public function __construct(array $filter)
@@ -56,22 +46,16 @@ class UserExport extends BaseExport
             'columns' => [
                 'id' => 'int',
                 'name' => 'text',
-                'email' => 'text',
-                'phone' => 'text',
-                'gender' => UserGenderEnum::class, // enum class with static resolve($value)
-                'is_active' => 'boolean',
-                'last_login' => 'datetime',
+                'status' => UserStatusEnum::class, // Auto-resolves via Enum::resolve()
                 'created_at' => 'datetime',
             ],
             'relations' => [
                 'one' => [
-                    // foreign_key => [ relationName => [ column => type ]]
-                    'created_by' => ['creator' => ['name' => 'text', 'id' => 'int']],
+                    'role_id' => ['role' => ['name' => 'text']],
                 ],
                 'many' => [
-                    'count' => [],
-                    'list' => [],
-                    'concat' => ['roles' => ['display_name' => 'text']]
+                    'count' => ['posts'],
+                    'concat' => ['tags' => ['name' => 'text']]
                 ],
             ],
         ];
@@ -81,188 +65,180 @@ class UserExport extends BaseExport
 }
 ```
 
-2) Trigger a download from a controller/route using the Facade (recommended):
+2) Trigger from your controller:
 
 ```php
-use HasanHawary\ExportBuilder\Facades\Export;
-
-public function downloadUsers()
-{
-    $filter = [
-        'page' => 'user',   // resolves to App\\Exports\\UserExport if config('export.namespace') = 'App\\\\Exports'
-        'format' => 'xlsx', // csv | xlsx | xls | pdf (default: xlsx)
-        // Optional
-        // 'filename' => 'users_report',
-        // 'timestamp' => '2025-09-21_120000',
-    ];
-
-    return (new ExportBuilder($filter))->response(); // BinaryFileResponse download
-}
-
+return Export::download([
+    'page' => 'user',
+    'format' => 'xlsx',
+    'start' => '2024-01-01',
+    'end' => '2024-12-31'
+]);
 ```
 
 ---
 
-## 📄 PDF Exports
-To support PDF generation, your export class must implement the `pdfView()` method and may optionally provide data and a custom data key.
+## 🚀 The Power of Advanced Filtering
+
+The `AdvancedFilter` trait allows you to perform complex queries through a simple JSON/Array payload. This is perfect for dynamic data tables or admin dashboards.
+
+### 🛠 Configuration
+Define how incoming keys map to your database relations in your export class:
 
 ```php
-class UserExport extends BaseExport
-{
-    // ... same as before
-
-    public function pdfView(): string
-    {
-        return 'exports.users'; // path to your blade view
-    }
-
-    public function pdfData(): array
-    {
-        // Optional: Custom data for the PDF template. 
-        // If not provided, it will use the default mapped array.
-        return $this->array();
-    }
-    
-    public function pdfDataKey(): string
-    {
-        // Optional: The key used to pass data to the view. 
-        // Default: 'data'
-        return 'users';
-    }
-}
-```
-
-The PDF view receives:
-- `$data`: The collection of items (using `pdfDataKey` if provided).
-- `$start` & `$end`: Carbon instances of the date filter.
-- `$settings`: Array of PDF settings (resolved via config or resolver).
-- All items in your `$filter` array.
-
----
-
-## 🔧 Configuration
-Publish the config and point the namespace to your preferred location:
-
-```php
-// config/export.php
-return [
-    'namespace' => 'App\\Exports',
-    
-    'pdf' => [
-        'settings' => [
-            'logo_url' => 'https://example.com/logo.png',
+'filter_relations' => [
+    'many' => [
+        // Filter by related IDs
+        'roles' => ['relation' => 'roles', 'column' => 'id'],
+        
+        // Filter through a nested relation
+        'country' => [
+            'relation' => 'profile.city.country',
+            'column' => 'id'
         ],
-        // Dynamically resolve settings (e.g., from DB or another service)
-        'settings_resolver' => [App\Resolvers\PdfSettingsResolver::class, 'resolve'],
-    ],
-];
+        
+        // Polymorphic filtering!
+        'tags' => [
+            'relation' => 'taggables',
+            'morph' => 'taggable',
+            'morph_types' => [Post::class, Video::class],
+            'column' => 'tag_id'
+        ]
+    ]
+]
 ```
 
-Now an incoming filter like ['page' => 'order'] will resolve to App\\Exports\\OrderExport.
+### 📡 Usage
+Pass an `advanced` array in your request:
 
----
-
-## 🧠 Columns, Types, and Formatting
-Declare the shape of your dataset via the columns map. BaseExport automatically converts values using the following types:
-- text: raw text
-- date: Y-m-d
-- datetime: Y-m-d H:i:s
-- array: array => "a , b , c"
-- int, float, money: numeric formatting (money uses 2 decimals)
-- bool/boolean: localized to api.yes/api.no
-- classPath: turns a class path into its tail name and tries to translate it
-- Enum classes: If a class is provided, and it has a static resolve($value) method, it will be used to map values
-
-Headings are generated from your column keys and passed through the api.* translation domain when available.
-
-You can also pick specific columns at runtime by passing filter['columns'] = ['id','name','creator.name'].
-
----
-
-## 🤝 Relations (one & many) and Nested Data
-- one: eager-loads a single related model and flattens its fields using the pattern relation_field.
-- many: supports three useful shapes for collections:
-  - count: include the total count of items
-  - list: return an array of values (useful for JSON exports)
-  - concat: a comma-separated string of values
-
-You may also target nested attributes using dot notation directly in columns, e.g. 'creator.department.name' => 'text'. These are resolved automatically.
-
----
-
-## 🔎 Filtering & Query Options
-You can control the dataset via the filter array you pass to your export or endpoint:
-- apply_date: boolean; when true, start/end will filter the date_column (default created_at)
-- start, end: date boundaries (YYYY-MM-DD)
-- search: full-text like filter across top-level column names
-- conditions: array of [key, operation, value] triplets passed to where()
-- order_by, order_dir: sorting (asc|desc)
-- limit: cap the number of records (handy for previews/testing)
-- type: optional segmenting helper used by BaseExport to include keys matching this string
-- columns: explicit column whitelist as an array
-
-You can change the date column by setting 'date_column' in your export config.
-
----
-
-## 🔐 Permissions
-Override isEnabled() in your export class to guard access with policies/permissions:
-
-```php
-public function isEnabled(): bool
+```json
 {
-    return auth()->user()?->can('export-users');
+  "page": "user",
+  "advanced": [
+    { "key": "roles", "value": [1, 5] },
+    { "key": "country", "value": 10 },
+    { "key": "name", "value": "John" } // Matches column name automatically
+  ]
 }
 ```
 
-If it returns false, the request responds with 403.
+---
+
+## 📄 PDF Generation
+Generate reports using Blade templates. Your class just needs to point to a view:
+
+```php
+public function pdfView(): string {
+    return 'exports.users_pdf';
+}
+```
+
+The view automatically receives:
+- `$data`: The prepared collection.
+- `$start` & `$end`: Carbon instances of the date range.
+- `$settings`: Global PDF settings from `config/export.php`.
 
 ---
 
-## 🧾 File Names & Formats
-- format: csv, xlsx, xls, or pdf (default xlsx)
-- filename: base name; defaults to page
-- timestamp: defaults to current Ymd_His
-The final file name is slugified as {filename}_{timestamp}.{ext}.
+## 🧠 Data Types & Formatting
+
+| Type | Output Example |
+|---|---|
+| `text` | Raw value |
+| `int` / `float` | Casted numeric |
+| `money` | `1,250.00` |
+| `date` / `datetime` | `2024-05-10` / `2024-05-10 14:30:00` |
+| `boolean` | Localized `Yes` / `No` |
+| `array` | `Value A , Value B` |
+| `classPath` | `User` (from `App\Models\User`) |
+| `Enum::class` | Result of `Enum::resolve($value)` |
 
 ---
 
-## 🛠 Troubleshooting
-- 422 Missing export page: provide filter['page'].
-- 404 Export class not found: ensure the class name matches {Page}Export and the namespace is configured.
-- 403 Forbidden: isEnabled() returned false.
-- Corrupted/blank Excel: the package cleans output buffers before streaming to avoid Excel corruption issues.
+## 🛠 Advanced Customization
+
+- **Custom Query**: Use `additionalQuery` to add closures to the base query.
+- **Custom Relation Mapping**: Use `CustomRelationTrait` to define multiple columns for a single relation automatically.
+- **Eager Loading**: Use `customWith` for specific performance optimizations.
+- **Select Specifics**: Use `customSelect` to reduce database load.
+
+---
+
+### 🛠 Custom Relation Mapping
+
+The `CustomRelationTrait` is a powerful way to define relations with zero boilerplate. It is now **integrated by default** in `BaseExport`, allowing you to handle complex mappings by simply defining `customRelations()` in your export class.
+
+#### 🛠 Usage
+
+Since the trait is already included in `BaseExport`, you only need to implement the mapping method:
+
+```php
+class OrderExport extends BaseExport
+{
+    public function __construct(array $filter)
+    {
+        $config = [
+            'model' => Order::class,
+            'columns' => [
+                'id' => 'int',
+                'reference' => 'text'
+            ],
+        ];
+        parent::__construct($config, $filter);
+    }
+
+    /**
+     * Define relations and the attributes you want to export.
+     * This is the recommended way to handle relations.
+     */
+    public function customRelations(): array
+    {
+        return [
+            // Standard mapping: relation_name => [attributes]
+            'user' => ['name', 'email'], 
+            
+            // Advanced mapping with closures & custom aliases
+            'profile' => [
+                'bio',
+                'age' => fn($profile) => $profile->birthday?->age ?? 'N/A',
+                'full_location' => fn($profile) => "{$profile->city}, {$profile->country}"
+            ],
+            
+            // One-to-Many support
+            'items' => ['product_name', 'price'],
+            
+            // Nested relations (dots are converted to underscores in column names)
+            'shippingAddress.city' => ['name'],
+        ];
+    }
+}
+```
+
+#### 📊 Output Behavior
+
+| Relation Type | Mapping Logic | Example Column Name |
+|---|---|---|
+| **One-to-One** | `relation_attribute` | `user_name`, `profile_bio` |
+| **Custom Alias** | `relation_key` | `profile_age`, `profile_full_location` |
+| **One-to-Many** | `relation_index_attribute` | `items_0_product_name`, `items_1_price` |
+| **Nested** | `path_attribute` (dots → `_`) | `shippingAddress_city_name` |
+
+#### 💡 Why use CustomRelationTrait?
+- **Zero Configuration**: No need to manually add the trait; it's part of the base class.
+- **Closure Support**: Perform complex formatting directly in the mapping.
+- **Automatic Eager Loading**: Relations are automatically detected and eager-loaded.
+- **Foreign Key Detection**: Automatically includes required FKs (like `user_id`) in `customSelect`.
+- **Automatic Cleanup**: Strips HTML tags and removes redundant `_id` columns from the main model output.
+- **Smart Headings**: Generates and translates headings automatically.
 
 ---
 
 ## ✅ Version Support
-- PHP: 8.0 – 8.5
-- Laravel: 8 – 12
-
----
-
-## 📚 Examples Cheat-Sheet
-- Only last 7 days and search by email:
-```php
-['page' => 'user', 'apply_date' => true, 'start' => now()->subDays(7)->toDateString(), 'search' => '@example.com']
-```
-- Sort and limit:
-```php
-['page' => 'user', 'order_by' => 'created_at', 'order_dir' => 'desc', 'limit' => 500]
-```
-- Add conditions (status = active):
-```php
-['page' => 'user', 'conditions' => [ ['key' => 'status', 'operation' => '=', 'value' => 'active'] ]]
-```
-
-## ✅ Version Support
-
 - **PHP**: 8.0 – 8.5
 - **Laravel**: 8 – 12
 
 ---
 
 ## 📜 License
-
 MIT © [Hasan Hawary](https://github.com/hasanhawary)
 
