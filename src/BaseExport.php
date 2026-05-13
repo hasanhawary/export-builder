@@ -188,9 +188,7 @@ abstract class BaseExport implements FromArray, WithMapping, WithHeadings
         $selectColumns = array_merge($columns, $this->customSelect, $this->resolveMorphTypeColumns());
 
         // Automatically detect and add foreign keys for all relations if customSelect is used
-        if (!empty($this->customSelect)) {
-            $selectColumns = array_merge($selectColumns, $this->detectForeignKeys($relations));
-        }
+        $selectColumns = array_merge($selectColumns, $this->detectForeignKeys($relations));
 
         $query = $this->model::select(array_unique($selectColumns));
 
