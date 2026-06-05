@@ -2,24 +2,30 @@
 
 namespace HasanHawary\ExportBuilder;
 
-use Carbon\Carbon;
+use HasanHawary\ExportBuilder\Renderers\ExcelRenderer;
+use HasanHawary\ExportBuilder\Renderers\PdfRenderer;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Str;
-use Maatwebsite\Excel\Facades\Excel;
-use Mccarlosen\LaravelMpdf\Facades\LaravelMpdf as PDF;
 use RuntimeException;
 use Symfony\Component\HttpFoundation\BinaryFileResponse;
 
+/**
+ * Entry point for the Export Builder package.
+ *
+ * Resolves the export class from the 'page' filter, instantiates it,
+ * and delegates rendering to PdfRenderer or ExcelRenderer.
+ */
 class ExportBuilder
 {
     /**
-     * Default namespace fallback for export classes. Can be overridden via config('export.namespace').
+     * Default namespace for export classes.
+     * Override via config('export.namespace').
      */
     public const DEFAULT_NAMESPACE = 'App\\Tools\\Export';
 
     public function __construct(public array $filter)
     {
-        // Clean output buffers to avoid Excel corruption issues
+        // Clean output buffers to avoid Excel file corruption
         if (function_exists('ob_end_clean')) {
             @ob_end_clean();
         }
@@ -29,36 +35,41 @@ class ExportBuilder
     }
 
     /**
-     * @return BinaryFileResponse
+     * Resolve the export class, instantiate it, and return a binary file download response.
      */
     public function response(): BinaryFileResponse
     {
         $page = (string) ($this->filter['page'] ?? '');
+
         if ($page === '') {
             abort(422, 'Missing export page.');
         }
 
         $class = $this->buildExportPath($page);
-        // dd($class);
-        if (!class_exists($class)) {
-            abort(404);
+
+        if (! class_exists($class)) {
+            abort(404, "Export class not found for page: {$page}");
         }
 
         try {
             $object = new $class($this->filter);
-            abort_if(!$object->isEnabled(), 403);
+
+            abort_if(! $object->isEnabled(), 403);
 
             $format = strtolower((string) ($this->filter['format'] ?? 'xlsx'));
 
-            if ($format === 'pdf') {
-                return $this->generatePdfResponse($object, $page);
-            }
+            return $format === 'pdf'
+                ? (new PdfRenderer($this->filter))->render($object)
+                : (new ExcelRenderer($this->filter))->render($object, $format);
 
-            return $this->generateExcelResponse($object, $page, $format);
+        } catch (\Symfony\Component\HttpKernel\Exception\HttpExceptionInterface $e) {
+            // Re-throw HTTP exceptions so Laravel renders the correct status code.
+            // Wrapping abort(403) / abort(404) as RuntimeException would produce 500.
+            throw $e;
         } catch (\Throwable $e) {
             Log::error('ExportBuilder: failed to generate response', [
-                'page' => $page,
-                'message' => $e->getMessage(),
+                'page'      => $page,
+                'message'   => $e->getMessage(),
                 'exception' => $e,
             ]);
 
@@ -67,135 +78,39 @@ class ExportBuilder
     }
 
     /**
-     * Undocumented function
-     *
-     * @param [type] $exportObject
-     * @param string $page
-     * @return BinaryFileResponse
-     */
-    private function generatePdfResponse($exportObject, string $page): BinaryFileResponse
-    {
-        if (!method_exists($exportObject, 'pdfView')) {
-            throw new RuntimeException('Export class must implement pdfView() method for PDF export');
-        }
-
-        $data = method_exists($exportObject, 'pdfData') ? $exportObject->pdfData() : [];
-        $viewName = $exportObject->pdfView();
-        $settings = $this->resolvePdfSettings();
-
-        $pdfData = array_merge(
-            $this->filter,
-            [
-                'data'       => $data,
-                'start' => !empty($this->filter['start']) ? Carbon::parse($this->filter['start']) : null,
-                'end'   => !empty($this->filter['end'])   ? Carbon::parse($this->filter['end'])   : null,
-                'settings'   => $settings,
-            ]
-        );
-
-        // Render blade to HTML string first so we can measure its size
-        $html = view($viewName, $pdfData)->render();
-
-        // mPDF uses PCRE regex internally to parse HTML.
-        // When HTML exceeds pcre.backtrack_limit it throws the "larger than pcre.backtrack_limit" error.
-        // We raise the limit dynamically to double the HTML size before creating the PDF.
-        $htmlLen = strlen($html);
-        if ($htmlLen > (int) ini_get('pcre.backtrack_limit')) {
-            ini_set('pcre.backtrack_limit', $htmlLen * 2);
-        }
-
-        $pdf = PDF::loadHTML($html);
-
-        $baseName = (string) ($this->filter['filename'] ?? $page);
-        $timestamp = (string) ($this->filter['timestamp'] ?? date('Ymd_His'));
-        $fileName = Str::slug("{$baseName}_{$timestamp}") . '.pdf';
-
-        $tempFile = tempnam(sys_get_temp_dir(), 'pdf_') . '.pdf';
-        file_put_contents($tempFile, $pdf->output());
-
-        return new BinaryFileResponse($tempFile, 200, [
-            'Content-Type' => 'application/pdf',
-            'Content-Disposition' => "attachment; filename=\"{$fileName}\"",
-        ]);
-    }
-
-    /**
-     * Resolve PDF settings using the configured resolver.
-     *
-     * @return array
-     */
-    private function resolvePdfSettings(): array
-    {
-        $settings = config('export.pdf.settings', []);
-
-        $resolver = config('export.pdf.settings_resolver');
-
-        if (empty($resolver)) {
-            return is_array($settings) ? $settings : [];
-        }
-
-        $resolved = null;
-
-        if (is_callable($resolver)) {
-            $resolved = app()->call($resolver);
-        } elseif (is_string($resolver) && class_exists($resolver)) {
-            $instance = app($resolver);
-
-            if (is_callable($instance)) {
-                $resolved = $instance();
-            }
-        } elseif (is_array($resolver) && count($resolver) === 2) {
-            $target = is_string($resolver[0]) ? app($resolver[0]) : $resolver[0];
-            $method = $resolver[1];
-
-            $resolved = app()->call([$target, $method]);
-        }
-
-        if (is_array($resolved)) {
-            return array_merge(
-                is_array($settings) ? $settings : [],
-                $resolved
-            );
-        }
-
-        return is_array($settings) ? $settings : [];
-    }
-
-    /**
-     * Undocumented function
-     *
-     * @param [type] $exportObject
-     * @param string $page
-     * @param string $format
-     * @return BinaryFileResponse
-     */
-    private function generateExcelResponse($exportObject, string $page, string $format): BinaryFileResponse
-    {
-        $ext = match ($format) {
-            'csv' => 'csv',
-            'xls' => 'xls',
-            default => 'xlsx',
-        };
-
-        $excelFormat = match ($format) {
-            'csv' => \Maatwebsite\Excel\Excel::CSV,
-            'xls' => \Maatwebsite\Excel\Excel::XLS,
-            default => \Maatwebsite\Excel\Excel::XLSX,
-        };
-
-        $baseName = (string) ($this->filter['filename'] ?? $page);
-        $timestamp = (string) ($this->filter['timestamp'] ?? date('Ymd_His'));
-        $fileName = Str::slug("{$baseName}_{$timestamp}") . ".{$ext}";
-
-        return Excel::download($exportObject, $fileName, $excelFormat);
-    }
-
-    /**
-     * Build the export class path based on the page name and configured namespace.
+     * Resolve the fully-qualified export class name from a page slug.
+     * e.g. 'user' → 'App\Tools\Export\UserExport'
      */
     protected function buildExportPath(string $page): string
     {
-        $ns = (string) (config('export.namespace') ?? self::DEFAULT_NAMESPACE);
+        $ns = (string) (config('export.namespace') ?: self::DEFAULT_NAMESPACE);
+
         return $ns . '\\' . Str::studly($page) . 'Export';
+    }
+
+    /**
+     * Build a slugified filename for an export file.
+     * Single source of truth — used by ExportBuilder, PdfRenderer, ExcelRenderer, and ExportToFile.
+     */
+    public static function buildFileName(array $filters, string $format): string
+    {
+        $base      = (string) ($filters['filename'] ?? $filters['page'] ?? 'export');
+        $timestamp = (string) ($filters['timestamp'] ?? now()->format('Ymd_His'));
+
+        return Str::slug("{$base}_{$timestamp}") . '.' . self::extensionForFormat($format);
+    }
+
+    /**
+     * Resolve the file extension for a given format string.
+     * Single source of truth for format → extension mapping.
+     */
+    public static function extensionForFormat(string $format): string
+    {
+        return match (strtolower($format)) {
+            'pdf'   => 'pdf',
+            'csv'   => 'csv',
+            'xls'   => 'xls',
+            default => 'xlsx',
+        };
     }
 }

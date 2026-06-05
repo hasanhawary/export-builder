@@ -14,6 +14,18 @@ return [
 
     /*
     |--------------------------------------------------------------------------
+    | Streaming Chunk Size
+    |--------------------------------------------------------------------------
+    |
+    | Number of rows fetched per chunk when streaming large exports via
+    | lazyById(). Increase for faster exports, decrease to reduce peak
+    | memory per chunk. Default: 500.
+    |
+    */
+    'chunk_size' => 500,
+
+    /*
+    |--------------------------------------------------------------------------
     | Translation Settings
     |--------------------------------------------------------------------------
     |
@@ -22,7 +34,6 @@ return [
     |
     */
     'trans_file' => 'export',
-
 
     /*
     |--------------------------------------------------------------------------
@@ -53,5 +64,62 @@ return [
         |
         */
         'settings_resolver' => null,
+    ],
+
+    /*
+    |--------------------------------------------------------------------------
+    | Package Export Module
+    |--------------------------------------------------------------------------
+    |
+    | The package can expose its own export endpoints, but it must never assume
+    | ownership of a host application's /export routes. Keep this module behind
+    | config so existing projects can disable, move, or replace it.
+    |
+    */
+    'module' => [
+        'enabled' => true,
+
+        'routes' => [
+            'enabled' => true,
+            'middleware' => ['api'],
+            'prefix' => 'api',
+            'export_path' => 'export',
+            'direct_path' => 'export-direct',
+            'log_path' => 'export-log',
+            'name_prefix' => 'export-builder.export.',
+        ],
+
+        'controllers' => [
+            'direct' => HasanHawary\ExportBuilder\Http\Controllers\ExportController::class,
+            'jobs' => HasanHawary\ExportBuilder\Http\Controllers\ExportJobController::class,
+        ],
+
+        'services' => [
+            'export' => HasanHawary\ExportBuilder\Services\ExportService::class,
+            'export_file' => HasanHawary\ExportBuilder\Services\ExportFileService::class,
+            'permissions' => HasanHawary\ExportBuilder\Services\ExportPermissionResolver::class,
+        ],
+
+        'storage' => [
+            'disk' => 'local',
+            'path' => 'exports',
+        ],
+
+        'permissions' => [
+            'enabled' => false,
+            'abilities' => [
+                'export' => 'export',
+                'queue' => 'create-export-file',
+                'view_all' => 'view-all-export-file',
+                'view_own' => 'view-own-export-file',
+                'delete' => 'delete-export-file',
+            ],
+            'pages' => [
+                // 'user' => [
+                //     'export' => 'export-user',
+                //     'queue' => 'create-export-file',
+                // ],
+            ],
+        ],
     ],
 ];

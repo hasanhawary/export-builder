@@ -3,15 +3,22 @@
 namespace HasanHawary\ExportBuilder\Tests;
 
 use HasanHawary\ExportBuilder\BaseExport;
+use HasanHawary\ExportBuilder\ExportBuilderServiceProvider;
 use Illuminate\Database\Eloquent\Model;
-use Illuminate\Support\Facades\Schema;
 use Illuminate\Database\Capsule\Manager as Capsule;
-use PHPUnit\Framework\TestCase;
+use Orchestra\Testbench\TestCase;
 
 class IntegrationTest extends TestCase
 {
+    protected function getPackageProviders($app): array
+    {
+        return [ExportBuilderServiceProvider::class];
+    }
+
     protected function setUp(): void
     {
+        parent::setUp();
+
         $capsule = new Capsule;
         $capsule->addConnection([
             'driver'   => 'sqlite',

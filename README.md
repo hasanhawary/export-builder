@@ -5,236 +5,682 @@
 [![PHP Version](https://img.shields.io/packagist/php-v/hasanhawary/export-builder.svg)](https://packagist.org/packages/hasanhawary/export-builder)
 [![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
-**Export Builder** is a robust, configuration-driven export engine for Laravel. It eliminates the need for repetitive boilerplate code when generating Excel and PDF exports. By defining your export structure as a simple configuration, the package handles complex Eloquent relations, polymorphic data, advanced filtering, and automatic formatting out of the box.
+A modular Laravel package for building reusable, memory-safe Excel and PDF exports.  
+Define one export class, get XLSX / XLS / CSV / PDF output, direct download or queued job — with relation support, advanced filters, permission gating, and full translation support.
 
 ---
 
-## ✨ Features
+## Table of Contents
 
-- **Zero Boilerplate**: Define your export structure in a simple configuration array.
-- **Smart Auto-Detection**: Automatically resolves the correct export class based on the request parameters.
-- **Relation Powerhouse**: Handles nested relations (one-to-one, one-to-many), polymorphic support, and aggregations (count, list, concat).
-- **Advanced Filtering**: Built-in "search-like" filtering on main models and relations without manual `where` clauses.
-- **Automatic Formatting**: Auto-converts types: dates, money, enums, booleans, and class paths.
-- **PDF & Excel Ready**: One engine, multiple formats. Switch between XLSX, CSV, XLS, and PDF seamlessly.
-- **Highly Extensible**: Register custom exporters, pages, and modules with ease.
-
----
-
-## 📦 Installation
-
-1. **Install via Composer**:
-   ```bash
-   composer require hasanhawary/export-builder
-   ```
-
-2. **Publish Configuration**:
-   ```bash
-   php artisan vendor:publish --tag=export-builder-config
-   ```
-
----
-
-## 🚀 How It Works Internally
-
-The **Export Builder** works by bridging your request filters with a dedicated Export Class.
-
-1. **Detection**: When you call `ExportBuilder`, it reads the `page` parameter from your input.
-2. **Resolution**: It searches for a matching class in your configured namespace (e.g., `App\Tools\Export\UserExport` for `page=user`).
-3. **Execution**: It instantiates the export class, applies filters, executes the query, maps the results, and returns a `BinaryFileResponse`.
-4. **Format Handling**: Based on the `format` parameter (`xlsx`, `pdf`, etc.), it automatically routes the data through the appropriate engine (`maatwebsite/excel` or `mpdf`).
+- [Features](#features)
+- [Requirements](#requirements)
+- [Installation](#installation)
+- [Quick Start](#quick-start)
+- [Configuration](#configuration)
+- [Export Formats](#export-formats)
+- [Column Types](#column-types)
+- [Relation Exports](#relation-exports)
+- [Custom Relations (Easy Mode)](#custom-relations-easy-mode)
+- [Morph Relation Exports](#morph-relation-exports)
+- [Advanced Filters](#advanced-filters)
+- [Column Selection Filter](#column-selection-filter)
+- [PDF Output](#pdf-output)
+- [Queued Exports](#queued-exports)
+- [Routes](#routes)
+- [Permissions](#permissions)
+- [Translations](#translations)
+- [Overriding Controllers and Services](#overriding-controllers-and-services)
+- [Performance](#performance)
+- [Testing](#testing)
 
 ---
 
-## 🛠 Setup & Usage
+## Features
 
-### 1. Define an Export Class
-Create a class that extends `BaseExport`. By default, these live in `app/Tools/Export`.
+- **XLSX, XLS, CSV, PDF** — one export class drives all formats
+- **Memory-safe streaming** — `lazyById()` cursor, configurable chunk size, peak memory stays flat regardless of dataset size
+- **Direct download or queued job** — same export class, two delivery modes
+- **Relation support** — belongs-to/has-one, has-many concat, has-many list, count with alias, nested dot-notation, polymorphic
+- **Advanced filters** — `whereIn`, `whereHas`, morph constraints, enum resolvers
+- **Column selection filter** — client can request a subset of columns at runtime
+- **Automatic type formatting** — text, int, float, money, date, datetime, bool, array, classPath, Enum
+- **Full translation support** — English and Arabic built-in; headings and bool values auto-translated
+- **Permission gating** — per-page permission config, custom resolver override, scoped list visibility
+- **Safe package routes** — never claims `/export`; host routes always win on conflict
+- **Publishable** — config, views, migrations, and lang files are all publishable
+- **Contracts / interfaces** — `BaseExportContract` for type-hinting custom implementations
+- **121 tests, 257 assertions**
+
+---
+
+## Requirements
+
+| Dependency | Version |
+|---|---|
+| PHP | 8.1 – 8.5 |
+| Laravel | 10, 11, 12, 13 |
+| `maatwebsite/excel` | ^3.1 or ^4.0 |
+| `carlos-meneses/laravel-mpdf` | ^2.0 |
+
+---
+
+## Installation
+
+```bash
+composer require hasanhawary/export-builder
+```
+
+Laravel auto-discovers the service provider. No manual registration needed.
+
+**Optional publishes:**
+
+```bash
+# Config
+php artisan vendor:publish --tag=export-builder-config
+
+# PDF Blade view (customise the template)
+php artisan vendor:publish --tag=export-builder-views
+
+# Language files (en + ar)
+php artisan vendor:publish --tag=export-builder-lang
+
+# Migration for queued export history
+php artisan vendor:publish --tag=export-builder-migrations
+php artisan migrate
+```
+
+Published lang files land in `lang/vendor/export/{en,ar}/export.php`.
+
+---
+
+## Quick Start
+
+Create an export class in the configured namespace (default: `App\Tools\Export`):
 
 ```php
 namespace App\Tools\Export;
 
-use HasanHawary\ExportBuilder\BaseExport;
 use App\Models\User;
-use App\Enums\UserStatus;
+use HasanHawary\ExportBuilder\BaseExport;
 
 class UserExport extends BaseExport
 {
     public function __construct(array $filter)
     {
-        $config = [
-            'model' => User::class,
+        parent::__construct([
+            'model'   => User::class,
             'columns' => [
                 'id'         => 'int',
                 'name'       => 'text',
                 'email'      => 'text',
-                'status'     => UserStatus::class, // Auto-resolves Enums with resolve() method
+                'is_active'  => 'bool',
                 'created_at' => 'datetime',
             ],
-            'relations' => [
-                'one' => [
-                    'role_id' => ['role' => ['name' => 'text']],
-                ],
-                'many' => [
-                    'count'  => ['posts'],
-                    'concat' => ['tags' => ['name' => 'text']]
-                ],
-            ],
-            'filter_relations' => [
-                'many' => [
-                    'roles' => ['relation' => 'roles', 'column' => 'id'],
-                ]
-            ]
-        ];
-
-        parent::__construct($config, $filter);
+        ], $filter);
     }
 }
 ```
 
-### 2. Using the Export Builder from a Controller
-You don't need to manually instantiate your export class. Use the `ExportBuilder` directly.
+`page=user` resolves to `App\Tools\Export\UserExport`.
+
+**Direct download in a controller:**
 
 ```php
 use HasanHawary\ExportBuilder\ExportBuilder;
-use Illuminate\Http\Request;
 
 public function export(Request $request)
 {
-    // The package auto-detects the 'UserExport' class from 'page=user'
-    // and generates the response based on 'format=xlsx' or 'format=pdf'
-    return (new ExportBuilder($request->all()))->response();
+    return (new ExportBuilder($request->validated()))->response();
 }
+```
+
+**Via package routes:**
+
+```
+GET  api/export-direct?page=user&format=xlsx
+GET  api/export-direct?page=user&format=pdf&start=2026-01-01&end=2026-06-30
+POST api/export          { "page": "user", "format": "xlsx" }   ← queued
+GET  api/export-log                                              ← history
 ```
 
 ---
 
-## 💎 Automatic Export Generation
+## Configuration
 
-One of the most powerful features of this package is its **Zero-Implementation Exporting**:
-
-* **Instant Formats**: Simply pass `format=xlsx` or `format=pdf` in your request. The package engine automatically handles the generation without requiring any additional code in your controller or export class.
-* **Powered Internally**: Export generation is fully managed by the package's internal system.
-* **Out of the Box**: High-quality PDF and Excel files are produced using optimized internal templates and drivers.
-
----
-
-## ⚙️ Configuration
-
-The `config/export.php` file allows you to customize the behavior:
+Publish and edit `config/export.php`:
 
 ```php
 return [
-    // Where your Export classes are located
-    'namespace' => 'App\\Tools\\Export',
+    // Namespace where export classes live
+    'namespace'  => 'App\\Tools\\Export',
 
-    // The translation file used for column headers
+    // Translation file for column headings and bool values
+    // 'export' → package built-in (en + ar)
+    // 'api'    → use your own lang/en/api.php
     'trans_file' => 'export',
 
+    // Rows per chunk for lazyById() streaming (memory-safe)
+    'chunk_size' => 500,
+
     'pdf' => [
-        'settings' => [
-            'logo_url' => 'https://example.com/logo.png',
-            'company_name' => 'My Company',
+        'settings'          => [],      // static: logo_url, company_name, etc.
+        'settings_resolver' => null,    // callable / invokable / [Class, 'method']
+    ],
+
+    'module' => [
+        'enabled' => true,
+
+        'routes' => [
+            'enabled'      => true,
+            'middleware'   => ['api'],
+            'prefix'       => 'api',
+            'export_path'  => 'export',
+            'direct_path'  => 'export-direct',
+            'log_path'     => 'export-log',
+            'name_prefix'  => 'export-builder.export.',
         ],
-        // Dynamically resolve PDF settings (e.g., from DB)
-        'settings_resolver' => [App\Services\ExportSettingService::class, 'resolve'],
+
+        'controllers' => [
+            'direct' => \HasanHawary\ExportBuilder\Http\Controllers\ExportController::class,
+            'jobs'   => \HasanHawary\ExportBuilder\Http\Controllers\ExportJobController::class,
+        ],
+
+        'services' => [
+            'export'      => \HasanHawary\ExportBuilder\Services\ExportService::class,
+            'export_file' => \HasanHawary\ExportBuilder\Services\ExportFileService::class,
+            'permissions' => \HasanHawary\ExportBuilder\Services\ExportPermissionResolver::class,
+        ],
+
+        'storage' => [
+            'disk' => 'local',
+            'path' => 'exports',
+        ],
+
+        'permissions' => [
+            'enabled'   => false,
+            'abilities' => [
+                'export'   => 'export',
+                'queue'    => 'create-export-file',
+                'view_all' => 'view-all-export-file',
+                'view_own' => 'view-own-export-file',
+                'delete'   => 'delete-export-file',
+            ],
+            'pages' => [
+                // Per-page ability overrides:
+                // 'user' => ['export' => 'export-user', 'queue' => 'queue-user'],
+            ],
+        ],
     ],
 ];
 ```
 
 ---
 
-## 🔍 Advanced Filtering & Options
+## Export Formats
 
-### Available Methods & Supported Parameters
-
-The `ExportBuilder` constructor accepts an array of filters (usually `$request->all()`). Key parameters include:
-
-| Parameter | Type | Description |
+| Format | Parameter | Notes |
 |---|---|---|
-| `page` | `string` | **Required**. The name of the export (e.g., `user`). Matches `UserExport`. |
-| `format` | `string` | Export format: `xlsx` (default), `pdf`, `csv`, `xls`. |
-| `filename` | `string` | Custom filename for the generated file. |
-| `timestamp`| `string` | Custom timestamp to append to the filename. |
-| `start` | `string` | Start date for automatic date filtering (on `created_at` by default). |
-| `end` | `string` | End date for automatic date filtering. |
-| `advanced` | `array` | Advanced filter objects (see below). |
+| XLSX | `format=xlsx` | Default |
+| XLS | `format=xls` | |
+| CSV | `format=csv` | |
+| PDF | `format=pdf` | Uses Blade view |
 
-### Advanced Filters
-Pass an `advanced` array in your filters to perform complex queries:
+---
+
+## Column Types
+
+| Type | Output |
+|---|---|
+| `text` | Raw string value |
+| `int` | Cast to integer |
+| `float` | Cast to float (non-numeric returned as-is) |
+| `money` | `number_format($v, 2, '.', '')` |
+| `date` | `YYYY-MM-DD` |
+| `datetime` | `YYYY-MM-DD HH:MM:SS` |
+| `bool` / `boolean` | Translated Yes / No |
+| `array` | `implode(' , ', array_filter($v))` |
+| `classPath` | Class basename, translated if key exists |
+| `MyEnum::class` | Calls `MyEnum::resolve($value)` |
+
+---
+
+## Relation Exports
+
+```php
+parent::__construct([
+    'model'   => User::class,
+    'columns' => ['id' => 'int', 'name' => 'text'],
+
+    'relations' => [
+        // One-to-one / BelongsTo
+        'one' => [
+            'role_id' => ['role' => ['name' => 'text']],
+        ],
+
+        'many' => [
+            // Concat all related values into one cell
+            'concat' => [
+                'tags' => ['label' => 'text'],
+            ],
+
+            // Multi-line block per related item
+            'list' => [
+                'addresses' => ['city' => 'text', 'country' => 'text'],
+            ],
+
+            // Count with optional alias
+            'count' => [
+                'orders as orders_total',
+            ],
+        ],
+
+        // Nested — automatically resolved as dot-notation with()
+        // e.g. 'department_id' => ['department' => ['company' => ['name' => 'text']]]
+    ],
+], $filter);
+```
+
+**Custom eager loads and selects:**
+
+```php
+'customWith'   => ['settings', 'profile'],       // extra with() paths
+'customSelect' => ['id', 'name', 'email'],        // restrict SELECT columns
+'additionalQuery' => [
+    'posts_count' => fn ($q) => $q->withCount('posts'),
+],
+```
+
+---
+
+## Custom Relations (Easy Mode)
+
+`customRelations()` is the simplest way to export related data without touching the `relations` config array. Override it in your export class and define columns with closures or attribute names — no schema-level config needed.
+
+```php
+class UserExport extends BaseExport
+{
+    public function __construct(array $filter)
+    {
+        parent::__construct([
+            'model'   => User::class,
+            'columns' => ['id' => 'int', 'name' => 'text', 'email' => 'text'],
+            // No 'relations' key needed — customRelations() handles it below
+        ], $filter);
+    }
+
+    public function customRelations(): array
+    {
+        return [
+            // Simple attribute access
+            'role' => ['name'],
+
+            // Callable — full control over the value
+            'profile' => [
+                'full_address' => fn ($profile) => "{$profile->city}, {$profile->country}",
+                'avatar_url'   => fn ($profile) => $profile->avatar ?? 'N/A',
+            ],
+
+            // Collection relation — one column per item with an index prefix
+            'permissions' => ['name'],
+        ];
+    }
+}
+```
+
+**How it works:**
+
+| Config key | Value type | Output column name |
+|---|---|---|
+| `'role' => ['name']` | Attribute string | `role_name` |
+| `'profile' => ['full_address' => fn]` | Callable | `profile_full_address` |
+| Collection relation | Any attribute | `permissions_0_name`, `permissions_1_name`, … |
+
+**Rules:**
+- The array key is the Eloquent relation name (e.g. `role` → `$model->role`)
+- When the relation is a `Collection`, each item gets an index prefix (`relation_0_key`, `relation_1_key`)
+- When the relation is a single model, the key is `relation_column`
+- `strip_tags()` is applied to all values automatically
+- Columns ending in `_id` are automatically removed from the heading row
+- Works with the `related` column filter — clients can request `related[]=role_name`
+
+**Compared to `relations` config:**
+
+| | `relations` config | `customRelations()` |
+|---|---|---|
+| Setup | Declare in constructor array | Override one method |
+| Nested relations | Yes (dot-notation) | No |
+| Callables | No | Yes |
+| Collection indexing | No | Yes |
+| Column filter support | Yes | Yes |
+| Best for | Standard BelongsTo / HasMany | Custom display logic, computed values |
+
+---
+
+## Morph Relation Exports
+
+```php
+'relations' => [
+    'morph' => [
+        'sourceable_id' => [
+            'relation' => 'sourceable',   // Eloquent morphTo method
+            'column'   => 'name',         // Column to display
+            'type'     => 'text',         // convertValue type (default: text)
+            'fallback' => null,           // Value when relation is null
+        ],
+    ],
+],
+```
+
+---
+
+## Advanced Filters
+
+Request body:
+
 ```json
 {
   "page": "user",
+  "format": "xlsx",
   "advanced": [
-    { "key": "status", "value": [1, 2] },
-    { "key": "roles", "value": 5 }
+    { "key": "status",  "value": ["active", "pending"] },
+    { "key": "role_id", "value": 3 }
   ]
 }
 ```
 
-### Supported Column Types (Automatic Formatting)
+Only keys matching actual table columns or configured relation keys are accepted — all others are silently ignored to prevent SQL injection.
 
-| Type | Output Example |
-|---|---|
-| `text` | Raw value |
-| `int` / `float` | Casted numeric |
-| `money` | `1250.00` |
-| `date` / `datetime` | `2024-05-10` / `2024-05-10 14:30:00` |
-| `boolean` | Localized `Yes` / `No` |
-| `array` | `Value A , Value B` |
-| `classPath` | `User` (from `App\Models\User`) |
-| `Enum::class` | Result of `Enum::resolve($value)` |
+**Relation filter config:**
+
+```php
+'filterRelations' => [
+    'many' => [
+        'role_id' => ['relation' => 'role', 'column' => 'id'],
+
+        // With morph constraint:
+        'source_id' => [
+            'relation'    => 'sourceable',
+            'morph'       => 'sourceable',
+            'morph_types' => [Campaign::class, Sponsor::class],
+            'column'      => 'id',
+        ],
+    ],
+],
+```
+
+**Enum resolver:**
+
+```php
+protected array $resolvers = [
+    'status' => ['enum' => StatusEnum::class, 'method' => 'fromLabel'],
+];
+```
 
 ---
 
-## 🧩 Customization & Registration
+## Column Selection Filter
 
-### How Custom Exporters are Registered
-The package uses a dynamic resolution strategy. Simply create a class in your configured namespace following the naming convention: `{StudlyPageName}Export`.
+Clients can request a subset of columns at runtime:
 
-- Page `user_profile` -> `UserProfileExport`
-- Page `orders` -> `OrdersExport`
+```
+GET api/export-direct?page=user&format=xlsx&columns[]=id&columns[]=name&related[]=roles
+```
 
-### Custom Relation Mapping
-Use the `CustomRelationTrait` (included in `BaseExport`) for complex mapping:
+Or via JSON:
 
-```php
-public function customRelations(): array
+```json
 {
-    return [
-        'profile' => [
-            'bio',
-            'age' => fn($profile) => $profile->birthday?->age ?? 'N/A',
-        ],
-        'items' => ['product_name', 'price'],
-    ];
+  "page": "user",
+  "format": "xlsx",
+  "columns": ["id", "name", "email"],
+  "related": ["roles", "orders_total"]
 }
 ```
 
-### Custom PDF Views
-Override `pdfView` and `pdfData` in your export class:
+`columns` filters base columns. `related` filters relation columns (concat, list, count).
+
+---
+
+## PDF Output
+
+The default Blade view is `export::pdf.export`.
+
+Publish to customise:
+
+```bash
+php artisan vendor:publish --tag=export-builder-views
+```
+
+Override per export class:
+
 ```php
 public function pdfView(): string
 {
-    return 'exports.custom-user-report';
+    return 'exports.my-custom-template';
 }
 
 public function pdfData(): array
 {
     return [
-        'summary' => $this->calculateSummary(),
+        'title'   => 'Users Report',
+        'columns' => array_map(fn ($h) => ['label' => $h, 'width' => 'auto'], $this->headings()),
+        'rows'    => $this->buildQuery()->get()->map(fn ($r) => array_values($this->map($r)))->toArray(),
     ];
 }
 ```
 
+**PDF settings resolver** — resolve dynamic settings (e.g. company logo from DB):
+
+```php
+// config/export.php
+'pdf' => [
+    'settings_resolver' => [App\Services\BrandSettings::class, 'forExport'],
+    // Also supports: invokable class string, Closure
+],
+```
+
+The resolver must return an array. Keys available in the Blade view as `$settings['logo_url']`, `$settings['company_name']`, etc.
+
 ---
 
-## ✅ Version Support
-- **PHP**: 8.0 – 8.5
-- **Laravel**: 8 – 12
+## Queued Exports
+
+```
+POST api/export
+{ "page": "user", "format": "xlsx" }
+```
+
+Response (202 Accepted):
+
+```json
+{
+  "data": {
+    "id": 1,
+    "exportable_type": "user",
+    "format": "xlsx",
+    "status": "pending",
+    "file_url": null
+  },
+  "message": "Export started successfully."
+}
+```
+
+Poll for completion:
+
+```
+GET api/export-log           ← list all (paginated, ?per_page=15&status=completed)
+GET api/export-log/{id}      ← show one
+GET api/export-log/{id}/download  ← stream the file
+DELETE api/export-log/{id}   ← soft-delete record and remove stored file
+```
+
+Files are stored on the configured disk:
+
+```php
+'storage' => ['disk' => 'local', 'path' => 'exports'],
+```
 
 ---
 
-## 📜 License
+## Routes
+
+All package routes default to the `api` prefix. They never claim a URI already owned by the host app.
+
+| Method | URI | Route name | Description |
+|---|---|---|---|
+| `GET` | `api/export-direct` | `export-builder.export.direct` | Direct file download |
+| `GET` | `api/export` | `export-builder.export.download` | Direct file download (alias) |
+| `POST` | `api/export` | `export-builder.export.store` | Create queued export |
+| `GET` | `api/export-log` | `export-builder.export.logs.index` | List export history |
+| `GET` | `api/export-log/{id}` | `export-builder.export.logs.show` | Show one export record |
+| `GET` | `api/export-log/{id}/download` | `export-builder.export.logs.download` | Download exported file |
+| `DELETE` | `api/export-log/{id}` | `export-builder.export.logs.destroy` | Delete record and file |
+
+**Disable all package routes:**
+
+```php
+'module' => ['enabled' => false],
+```
+
+**Move to a different prefix:**
+
+```php
+'routes' => [
+    'prefix'      => 'internal/reports',
+    'name_prefix' => 'reports.',
+],
+```
+
+---
+
+## Permissions
+
+Disabled by default. Enable and configure per-page abilities:
+
+```php
+'permissions' => [
+    'enabled' => true,
+    'abilities' => [
+        'export'   => 'export',
+        'queue'    => 'create-export-file',
+        'view_all' => 'view-all-export-file',
+        'view_own' => 'view-own-export-file',
+        'delete'   => 'delete-export-file',
+    ],
+    'pages' => [
+        'user' => [
+            'export' => 'export-user',
+            'queue'  => 'create-user-export',
+        ],
+    ],
+],
+```
+
+**Custom resolver** — replace the entire permission logic:
+
+```php
+'services' => [
+    'permissions' => App\Services\MyExportPermissionResolver::class,
+],
+```
+
+Your class must extend `ExportPermissionResolver` or implement the same public API (`canExport`, `canCreateQueued`, `canList`, `canView`, `canDelete`, `scopeForUser`).
+
+---
+
+## Translations
+
+The package ships with English and Arabic translations for column headings and boolean values.
+
+**Published to:** `lang/vendor/export/{en,ar}/export.php`
+
+| Key | English | Arabic |
+|---|---|---|
+| `id` | ID | المعرف |
+| `name` | Name | الاسم |
+| `email` | Email | البريد الإلكتروني |
+| `is_active` | Active | نشط |
+| `created_at` | Created At | تاريخ الإنشاء |
+| `yes` | Yes | نعم |
+| `no` | No | لا |
+
+**Use your own translation file:**
+
+```php
+// config/export.php
+'trans_file' => 'api',  // looks up lang/en/api.php keys
+```
+
+**Add custom column translations** — add keys to your published `lang/vendor/export/en/export.php`:
+
+```php
+return [
+    // ...existing keys...
+    'order_number' => 'Order #',
+    'total_amount' => 'Total',
+];
+```
+
+---
+
+## Overriding Controllers and Services
+
+Every package class can be replaced from config:
+
+```php
+'module' => [
+    'controllers' => [
+        'direct' => App\Http\Controllers\CustomExportController::class,
+        'jobs'   => App\Http\Controllers\CustomExportJobController::class,
+    ],
+    'services' => [
+        'export'      => App\Services\CustomExportService::class,
+        'export_file' => App\Services\CustomExportFileService::class,
+        'permissions' => App\Services\CustomExportPermissionResolver::class,
+    ],
+],
+```
+
+---
+
+## Performance
+
+| Feature | Detail |
+|---|---|
+| **Lazy streaming** | `lazyById()` cursor — peak memory stays flat at any dataset size |
+| **Configurable chunk size** | `export.chunk_size` (default 500) |
+| **FK detection cache** | Computed once per export instance |
+| **Schema column cache** | Static cache per table, one `SHOW COLUMNS` per request |
+| **Query cache** | `buildQuery()` result cached per instance |
+| **PDF settings cache** | Resolver called once per `ExportBuilder` instance |
+
+---
+
+## Testing
+
+```bash
+composer test
+```
+
+The test suite covers:
+
+- Excel generation with spreadsheet readback (all column types)
+- PDF generation with Blade view
+- Relation exports: belongs-to, has-many concat, count alias, nested, morph
+- Column filter — heading/map consistency, PDF filter safety
+- Route registration, host conflict protection, disable/enable
+- Permission deny/allow for direct, queued, list, download, delete
+- Custom controller and service overrides
+- `ExportFileService` full lifecycle and delete edge cases
+- `AdvancedFilter` security allowlist, relation filters, enum resolver, error recovery
+- `HelperTrait::convertValue` — all 10+ type branches and edge cases
+- `ExportBuilder::buildFileName` — naming consistency between direct and queued paths
+- Storage config SSOT via `storageDisk()` / `storagePath()`
+- Architecture regression guards (SSOT fixes)
+- Edge cases: morph, nested relations, `customWith`, `customSelect`, PDF resolver variants
+
+---
+
+## License
+
 MIT © [Hasan Hawary](https://github.com/hasanhawary)
-

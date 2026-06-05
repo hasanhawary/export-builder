@@ -2,301 +2,180 @@
 
 namespace HasanHawary\ExportBuilder;
 
-use Illuminate\Database\Eloquent\Relations\MorphTo;
+use HasanHawary\ExportBuilder\Concerns\AdvancedFilter;
+use HasanHawary\ExportBuilder\Concerns\CustomRelationTrait;
+use HasanHawary\ExportBuilder\Concerns\HasColumnFilter;
+use HasanHawary\ExportBuilder\Concerns\HasExcelStyles;
+use HasanHawary\ExportBuilder\Concerns\HasMorphRelations;
+use HasanHawary\ExportBuilder\Concerns\HasPdfOutput;
+use HasanHawary\ExportBuilder\Concerns\HasQueryBuilder;
+use HasanHawary\ExportBuilder\Concerns\HasRelations;
+use HasanHawary\ExportBuilder\Concerns\HelperTrait;
+use HasanHawary\ExportBuilder\Contracts\BaseExportContract;
+use HasanHawary\ExportBuilder\Support\ExportHelper;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Arr;
 use Illuminate\Support\Str;
-use Maatwebsite\Excel\Concerns\FromArray;
+use Maatwebsite\Excel\Concerns\FromCollection;
+use Maatwebsite\Excel\Concerns\ShouldAutoSize;
 use Maatwebsite\Excel\Concerns\WithHeadings;
 use Maatwebsite\Excel\Concerns\WithMapping;
+use Maatwebsite\Excel\Concerns\WithStyles;
 
-abstract class BaseExport implements FromArray, WithMapping, WithHeadings
+abstract class BaseExport implements BaseExportContract, FromCollection, WithMapping, WithHeadings, WithStyles, ShouldAutoSize
 {
-    use HelperTrait, AdvancedFilter, CustomRelationTrait;
+    use HelperTrait;
+    use AdvancedFilter;
+    use CustomRelationTrait;
+    use HasRelations;
+    use HasMorphRelations;
+    use HasColumnFilter;
+    use HasExcelStyles;
+    use HasPdfOutput;
+    use HasQueryBuilder;
 
+    // -------------------------------------------------------------------------
+    // Config properties (populated by the constructor)
+    // -------------------------------------------------------------------------
+
+    /** @var array<string, string>  column => type map */
     private array $columns;
-    private array $relations;
-    private array $additionalQuery;
-    private string|array $model;
-    private string $dateColumn;
-    private array $filter;
-    private array $customWith;
-    private array $customSelect;
-    protected array $filterRelations;
-
-
-    public function __construct(array $config, array $filter)
-    {
-        /**
-         * Columns Configuration:
-         *
-         * Define the structure and data types of the columns associated with a 'cause'.
-         * Each entry in the array represents a column in your dataset.
-         * The key is the column name, and the value is the data type of that column.
-         *
-         * Supported data types include:
-         * - 'text': for text-based columns.
-         * - 'date': for date columns.
-         * - Enum classes: for columns that should be an enum value (e.g., CauseStatusEnum::class).
-         * - 'file': for file or binary data columns.
-         * - 'bool': for boolean columns.
-         *
-         * Example:
-         * To add a 'description' column of type 'text', add the following key-value pair:
-         * 'description' => 'text',
-         */
-        $this->columns = $config['columns'];
-
-        /**
-         * Relations Configuration:
-         *
-         * Define the relationships between 'cause' and other entities.
-         * Relationships are categorized into 'one' (one-to-one) and 'many' (one-to-many).
-         *
-         * For one-to-one relationships, use the 'one' key, and for one-to-many relationships, use the 'many' key.
-         *
-         * Each relationship should be an array where the key is the relationship name and the value is an array defining the structure of the related entity.
-         *
-         * For nested relations, the structure can be nested arrays.
-         *
-         * Example:
-         * To add a one-to-one relationship with an entity 'category' which has a 'name' column, add the following:
-         * 'one' => [
-         *     'category_id' => ['category' => ['name' => 'text']]
-         * ],
-         * To add a one-to-many relationship with an entity 'tags' which has a 'label' column, add the following:
-         * 'many' => [
-         *     'tags' => ['label' => 'text']
-         * ],
-         */
-        $this->relations = $config['relations'];
-
-        /**
-         * Custom With (Eager Loading) Configuration:
-         *
-         * Define additional relationships to an eager load on the base query.
-         * Use this to prevent N+1 queries or to prepare nested data that may not
-         * be explicitly described in the 'relations' configuration above.
-         *
-         * This must be an array compatible with Eloquent's with() method.
-         *
-         * Supported forms:
-         * - Simple list of relationship names:
-         *   ['category', 'creator']
-         *
-         * - Nested relationships using dot or array notation:
-         *   ['category.parent', 'tags']
-         *   or
-         *   ['category' => ['parent'], 'tags']
-         *
-         * - Constrained relationships using closures:
-         *   ['comments' => function ($query) { $query->latest()->limit(5); }]
-         *
-         * Examples:
-         * To eager load 'category':
-         * ['category']
-         *
-         * To eager load nested 'category.parent' and only approved 'comments':
-         * [
-         *     'category.parent',
-         *     'comments' => fn ($query) => $query->where('approved', true),
-         * ]
-         */
-        $this->customWith = $config['customWith'] ?? [];
-
-        /**
-         * Custom Select Configuration:
-         *
-         * Specifies the columns to select on the base query.
-         * Helps reduce data load and improve query performance
-         * by avoiding selecting all columns.
-         *
-         * Must be an array compatible with Eloquent's select() method.
-         *
-         * Example:
-         * ['id', 'name', 'created_at']
-         */
-        $this->customSelect = $config['customSelect'] ?? [];
-
-
-        /**
-         * Additional Query Configuration:
-         *
-         * Define additional queries or helper queries that can be used in the 'with' method when retrieving the 'cause' entity.
-         * Each query should be an array where the key is the query name, and the value is a closure defining the structure of the query.
-         *
-         * For example,
-         * To add a query named 'example_query' which performs a specific operation, add the following:
-         * 'name_column' => function ($query) {
-         *     // Define the structure of your query here
-         *     $query->with{Aggregate}(['relations' => Closure()]);
-         * },
-         */
-        $this->additionalQuery = $config['additionalQuery'] ?? [];
-
-        /**
-         * Model Configuration:
-         *
-         * Set the model for the entity based on the provided configuration.
-         */
-        $this->model = $config['model'];
-
-        /**
-         * Date Column Configuration:
-         *
-         * Set the date column based on the provided configuration.
-         */
-        $this->dateColumn =  $config['dateColumn'] ?? $config['date_column'] ?? 'created_at';
-
-        /**
-         * Filter Configuration:
-         *
-         * Set the filter based on the provided configuration.
-         */
-        $this->filter = $filter;
-
-        /**
-         * Filter Configuration:
-         *
-         * Set the filter based on the provided configuration.
-         */
-        $this->filterRelations = $config['filterRelations'] ?? $config['filter_relations'] ?? [];
-    }
 
     /**
-     * Build the base Eloquent query with all eager loads, relations, and filters applied.
-     * Shared between array() (Excel) and pdfData() (PDF) — single source of truth for query + filter.
-     *
-     * @return \Illuminate\Database\Eloquent\Builder
+     * Relation config:
+     *   'one'   => [...],
+     *   'many'  => ['concat' => [...], 'list' => [...], 'count' => [...]],
+     *   'morph' => [...],
      */
-    protected function buildQuery(): \Illuminate\Database\Eloquent\Builder
+    private array $relations;
+
+    /** Closures or withAggregate calls applied to the base query */
+    private array $additionalQuery;
+
+    /** Eloquent model class string */
+    private string|array $model;
+
+    /** Column used for date-range filtering */
+    private string $dateColumn;
+
+    /** Raw filter array from the request */
+    private array $filter;
+
+    /** Extra with() paths passed in config */
+    private array $customWith;
+
+    /** Extra select() columns passed in config */
+    private array $customSelect;
+
+    /** Relation map used by AdvancedFilter for whereHas filtering */
+    protected array $filterRelations;
+
+    /** Cache for detectForeignKeys() — computed once per instance */
+    private ?array $detectedForeignKeys = null;
+
+    /** Cache for buildQuery() — assembled once, reused by collection() and pdfData() */
+    private ?Builder $builtQuery = null;
+
+    // -------------------------------------------------------------------------
+    // Constructor
+    // -------------------------------------------------------------------------
+
+    /**
+     * @param  array  $config  {
+     *     model:           class-string,
+     *     columns:         array<string, string>,
+     *     relations?:      array,
+     *     additionalQuery?: array,
+     *     customWith?:     array,
+     *     customSelect?:   array,
+     *     dateColumn?:     string,
+     *     date_column?:    string,
+     *     filterRelations?: array,
+     *     filter_relations?: array,
+     * }
+     * @param  array  $filter  Validated request data
+     */
+    public function __construct(array $config, array $filter)
     {
-        $columns = array_merge(array_keys($this->columns), array_keys($this->relations['one']));
-        $relations = $this->resolveRelationKeys($this->mergeKeyedArrays($this->relations['one']));
-        $relations = array_merge($relations, $this->resolveRelationKeys($this->applyColumnFilter($this->relations['many']['concat'], 'many')));
-        $relations = array_merge($relations, $this->resolveRelationKeys($this->relations['many']['list']));
-        $relations = array_merge($relations, $this->customWith);
+        $this->model  = $config['model'];
+        $this->filter = $filter;
 
-        // Add custom relations from CustomRelationTrait if used
-        $customRelations = $this->customRelations();
-        if (!empty($customRelations)) {
-            $relations = array_merge($relations, array_keys($customRelations));
-        }
+        $this->columns = $config['columns'];
 
-        $countRelations = $this->relations['many']['count'];
-        $morphRelations = $this->buildMorphWithRelations();
+        // Merge user-supplied relations over safe defaults so omitted keys never
+        // cause "undefined index" errors in map() / headings() / buildQuery().
+        $this->relations = array_replace_recursive([
+            'one'  => [],
+            'many' => ['concat' => [], 'list' => [], 'count' => []],
+            'morph' => [],
+        ], $config['relations'] ?? []);
 
-        $selectColumns = array_merge($columns, $this->customSelect, $this->resolveMorphTypeColumns());
-
-        // Automatically detect and add foreign keys for all relations if customSelect is used
-        $selectColumns = array_merge($selectColumns, $this->detectForeignKeys($relations));
-
-        $query = $this->model::select(array_unique($selectColumns));
-
-        // Handle With methods based on given relations
-        if (!empty($countRelations)) {
-            $query->withCount(...$countRelations);
-        }
-
-        if (!empty($relations)) {
-            $query->with(...Arr::flatten($relations));
-        }
-
-        // Morph relations: pass as a plain array
-        if (!empty($morphRelations)) {
-            $query->with($morphRelations);
-        }
-
-        if (!empty($this->customWith)) {
-            $query->with($this->customWith);
-        }
-
-        // Handle Additional Query like closure functions
-        if (!empty($this->additionalQuery)) {
-            collect($this->additionalQuery)->each(fn($item) => $item($query));
-        }
-
-        $this->applyDateFilter($query);
-        $this->applyAdvancedFilter($query);
-
-        return $query;
+        $this->additionalQuery  = $config['additionalQuery']  ?? [];
+        $this->customWith       = $config['customWith']       ?? [];
+        $this->customSelect     = $config['customSelect']     ?? [];
+        $this->dateColumn       = $config['dateColumn']       ?? $config['date_column']       ?? 'created_at';
+        $this->filterRelations  = $config['filterRelations']  ?? $config['filter_relations']  ?? [];
     }
 
-    /**.
-     * @return array
-     */
-    public function array(): array
-    {
-        $data = [];
-
-        //Fetch data with chunk to handle big data
-        $this->buildQuery()->chunk(100, function ($dataChunk) use (&$data) {
-            $dataChunk->each(function ($item) use (&$data) {
-                $data[] = $item;
-            });
-        });
-
-        return $data;
-    }
+    // -------------------------------------------------------------------------
+    // Excel: map()  — one row per model instance
+    // -------------------------------------------------------------------------
 
     public function map($object): array
     {
         $result = [];
 
-        // Handle columns
-        foreach ($this->columns as $column => $type) {
+        // Base columns — apply filter so map() and headings() are consistent
+        $columns = $this->applyColumnFilter($this->columns);
+        foreach ($columns as $column => $type) {
             $result[$column] = $this->convertValue($object, $column, $type);
         }
 
-        // Handle one-to-one relations
-        foreach ($this->relations['one'] as $relation) {
-            $oneRelation = $this->extractOneRelation($object, $relation);
-
-            $result[key($relation)] = current(Arr::where(Arr::dot($oneRelation), function ($value, $key) {
-                $strPart = Str::of($key)->explode('.');
-                return ($strPart->last() === 'id' && $strPart->count() === 1) || $strPart->last() !== 'id';
-            }));
+        // One-to-one relations
+        $oneRelations = $this->applyColumnFilter($this->relations['one']);
+        foreach ($oneRelations as $relation) {
+            $result[key($relation)] = $this->extractOneRelationValue($object, $relation);
         }
 
-        // Handle morph relations
-        foreach ($this->relations['morph'] ?? [] as $foreignKey => $morphConfig) {
+        // Morph relations (no column filter — morph keys are always explicit)
+        foreach ($this->relations['morph'] as $foreignKey => $morphConfig) {
             $result[$foreignKey] = $this->extractMorphRelation($object, $foreignKey, $morphConfig);
         }
 
-        // Handle one-to-many relations (concat)
+        // One-to-many concat
         foreach ($this->applyColumnFilter($this->relations['many']['concat']) as $relation => $details) {
-            $manyRelation = $this->extractManyRelation($object, $relation, $details);
-            $result[$relation] = implode(', ', Arr::where(Arr::dot($manyRelation), function ($value, $key) {
-                $strPart = Str::of($key)->explode('.');
-                return ($strPart->last() === 'id' && $strPart->count() === 1) || $strPart->last() !== 'id';
-            }));
+            $result[$relation] = $this->extractConcatRelationValue($object, $relation, $details);
         }
 
-        //Handle one-to-many relations (many column)
-        foreach ($this->relations['many']['list'] as $relationName => $details) {
-            $flattenedData = $this->flattenArray($this->extractManyRelation($object, $relationName, $details));
-            $finalResult = collect($flattenedData)->reject(function ($value, $key) {
-                return str_ends_with($key, '_id') || is_array($value);
-            })->map(function ($value, $key) {
-                return resolveTrans($key) . ": " . (is_array($value) ? json_encode($value, JSON_THROW_ON_ERROR) : $value) . PHP_EOL;
-            })->implode(str_repeat('-', 20) . PHP_EOL);
+        // One-to-many list (formatted multi-line block)
+        foreach ($this->applyColumnFilter($this->relations['many']['list'], 'many') as $relationName => $details) {
+            $flat = $this->flattenArray($this->extractManyRelation($object, $relationName, $details));
 
-            $result[$relationName] = $finalResult;
+            $result[$relationName] = collect($flat)
+                ->reject(fn ($v, $k) => str_ends_with($k, '_id') || \is_array($v))
+                ->map(fn ($v, $k) => ExportHelper::resolveTrans($k) . ': ' . (\is_array($v) ? json_encode($v, JSON_THROW_ON_ERROR) : $v) . PHP_EOL)
+                ->implode(str_repeat('-', 20) . PHP_EOL);
         }
 
-        //Handle one-to-many relations (count)
-        foreach ($this->relations['many']['count'] as $relationName) {
-            $result[$relationName] = $object->{Str::snake($relationName) . '_count'};
+        // Count relations
+        foreach ($this->applyColumnFilter($this->relations['many']['count'], 'many') as $relationName) {
+            [$relation, $alias] = str_contains($relationName, ' as ')
+                ? explode(' as ', $relationName)
+                : [$relationName, Str::snake($relationName) . '_count'];
+
+            $result[$alias] = $object->{$alias};
         }
 
-        //Handle additional relations
-        foreach ($this->additionalQuery as $key => $value) {
+        // Additional query columns
+        $additional = $this->applyColumnFilter($this->additionalQuery, 'many');
+        foreach ($additional as $key => $value) {
             $result[$key] = $object->$key ?? '';
         }
 
-        //Resolve for last shape && handle column key
-        if (!empty($this->customRelations())) {
+        // Custom relation override (CustomRelationTrait)
+        if (! empty($this->customRelations())) {
             $result = collect($result)
-                ->reject(fn($value, $key) => str_ends_with($key, '_id'))
+                ->reject(fn ($v, $k) => str_ends_with($k, '_id'))
                 ->all();
 
             return array_merge($result, $this->mapRelations($object));
@@ -305,333 +184,58 @@ abstract class BaseExport implements FromArray, WithMapping, WithHeadings
         return $result;
     }
 
+    // -------------------------------------------------------------------------
+    // Excel: headings()  — column header row
+    // -------------------------------------------------------------------------
+
     public function headings(): array
     {
-        $this->columns = $this->applyColumnFilter($this->columns);
-        $this->relations['one'] = $this->applyColumnFilter($this->relations['one']);
-        $this->relations['many']['concat'] = $this->applyColumnFilter($this->relations['many']['concat']);
-        $this->relations['many']['list'] = $this->applyColumnFilter($this->relations['many']['list'], 'many');
-        $this->relations['many']['count'] = $this->applyColumnFilter($this->relations['many']['count'], 'many');
-        $this->additionalQuery = $this->applyColumnFilter($this->additionalQuery, 'many');
+        // Work on local copies — never mutate instance state.
+        // This makes headings() and map() order-independent and fixes the PDF
+        // + column-filter bug where buildQuery() ran after $this->columns was destroyed.
+        $columns        = $this->applyColumnFilter($this->columns);
+        $oneRelations   = $this->applyColumnFilter($this->relations['one']);
+        $concatRelations = $this->applyColumnFilter($this->relations['many']['concat']);
+        $listRelations  = $this->applyColumnFilter($this->relations['many']['list'], 'many');
+        $countRelations = $this->applyColumnFilter($this->relations['many']['count'], 'many');
+        $additional     = $this->applyColumnFilter($this->additionalQuery, 'many');
 
-        $columnHeadings = array_keys($this->columns);
-        $oneRelationHeadings = array_keys($this->mergeKeyedArrays($this->relations['one']));
-        $morphHeadings = array_keys($this->relations['morph'] ?? []);
-        $concatRelationHeadings = array_keys(array_map(fn($relation) => array_keys($relation), $this->relations['many']['concat']));
-        $manyRelationHeadings = array_keys(array_map(fn($relation) => array_keys($relation), $this->relations['many']['list']));
-        $countRelationHeadings = $this->relations['many']['count'];
-        $additionalHeading = array_keys($this->additionalQuery);
+        $keys = array_merge(
+            array_keys($columns),
+            array_keys($this->mergeKeyedArrays($oneRelations)),
+            array_keys($this->relations['morph']),
+            array_keys($concatRelations),
+            array_keys($listRelations),
+            array_map(
+                fn ($name) => str_contains($name, ' as ') ? explode(' as ', $name)[1] : $name,
+                $countRelations
+            ),
+            array_keys($additional)
+        );
 
-        $columns = array_merge($columnHeadings, $oneRelationHeadings, $morphHeadings, $concatRelationHeadings, $manyRelationHeadings, $countRelationHeadings, $additionalHeading);
+        $headings = Arr::map($keys, fn ($col) => $this->resolveTrans($col));
 
-        $baseHeadings = Arr::map($columns, fn($item) => $this->resolveTrans($item));
-
-        if (!empty($this->customRelations())) {
-            $baseHeadings = collect($baseHeadings)
-                ->reject(fn($value) => str_ends_with($value, '_id'))
+        if (! empty($this->customRelations())) {
+            $headings = collect($headings)
+                ->reject(fn ($v) => str_ends_with($v, '_id'))
+                ->values()
                 ->all();
 
-            return array_merge($baseHeadings, $this->headingRelations());
+            return array_merge($headings, $this->headingRelations());
         }
 
-        return $baseHeadings;
+        return $headings;
     }
 
-    public function isEnabled(): true
+    // -------------------------------------------------------------------------
+    // Misc
+    // -------------------------------------------------------------------------
+
+    /**
+     * Return false in a subclass to disable the export entirely (results in 403).
+     */
+    public function isEnabled(): bool
     {
         return true;
-    }
-
-    /*
-    |--------------------------------------------------------------------------
-    | Morph Relation Handling
-    |--------------------------------------------------------------------------
-    |
-    | Config shape:
-    |
-    | 'morph' => [
-    |     'sourceable_id' => [                        // FK column (used as heading key)
-    |         'relation'  => 'sourceable',            // Eloquent morph method name
-    |         'column'    => 'name',                  // Which column to display in the cell
-    |         'models'    => [                        // Optional: per-type column constraints
-    |             Campaign::class   => ['id', 'name'],
-    |             Sponsor::class    => ['id', 'name'],
-    |         ],
-    |     ],
-    | ],
-    */
-    private function resolveMorphTypeColumns(): array
-    {
-        $typeColumns = [];
-
-        foreach ($this->relations['morph'] ?? [] as $foreignKey => $morphConfig) {
-            // e.g. 'sourceable' → 'sourceable_id' , 'sourceable' → 'sourceable_type'
-            $typeColumns[] = $morphConfig['relation'] . '_id';
-            $typeColumns[] = $morphConfig['relation'] . '_type';
-        }
-
-        return array_unique($typeColumns);
-    }
-
-    /**
-     * Build MorphTo eager loads using MorphTo::constrain() for per-type column constraints,
-     * or plain relation name when no per-type models are defined.
-     */
-    private function buildMorphWithRelations(): array
-    {
-        $withs = [];
-
-        foreach ($this->relations['morph'] ?? [] as $foreignKey => $morphConfig) {
-            $relationName = $morphConfig['relation'];
-            $withs[] = $relationName;
-        }
-
-        return $withs;
-    }
-
-    /**
-     * Extract the display value from a morph relation on a given object.
-     *
-     * Falls back gracefully to null if the relation is not loaded or is null.
-     */
-    private function extractMorphRelation(mixed $object, string $foreignKey, array $morphConfig): mixed
-    {
-        $relationName = $morphConfig['relation'];
-        $column       = $morphConfig['column'];
-        $fallback     = $morphConfig['fallback'] ?? null;
-
-        $relatedEntity = $object->$relationName;
-
-        if ($relatedEntity === null) {
-            return $fallback;
-        }
-
-        // Support dot-notation for nested access e.g. 'category.name'
-        if (Str::contains($column, '.')) {
-            return data_get($relatedEntity, $column, $fallback);
-        }
-
-        return $this->convertValue($relatedEntity, $column, $morphConfig['type'] ?? 'text');
-    }
-
-    /*
-    |--------------------------------------------------------------------------
-    | Extract Relations Methods
-    |--------------------------------------------------------------------------
-    */
-    private function extractOneRelation(mixed $parentEntity, array $relationMappings): array
-    {
-        $extractedData = [];
-        foreach ($relationMappings as $relationName => $columnMappings) {
-            $relatedEntity = $parentEntity->$relationName;
-
-            foreach ($columnMappings as $columnName => $columnType) {
-                if (is_array($columnType)) {
-                    $extractedData[$relationName][$columnName] = $this->extractOneRelation($relatedEntity, $columnType);
-                } else {
-                    $extractedData[$relationName][$columnName] = $this->convertValue($relatedEntity, $columnName, $columnType);
-                }
-            }
-        }
-
-        return $extractedData;
-    }
-
-    private function extractManyRelation(mixed $object, string $relationName, array $details): array
-    {
-        $relatedDataSet = [];
-        foreach ($object->$relationName as $relatedObject) {
-            $relatedData = [];
-            foreach ($details as $relatedColumn => $type) {
-                if (is_array($type)) {
-                    foreach ($type as $nestedRelation => $nestedDetails) {
-                        $relatedData[$nestedRelation] = Arr::first($this->extractNestedRelation($relatedObject, $nestedRelation, $nestedDetails));
-                    }
-                } else {
-                    $relatedData[$relatedColumn] = $this->convertValue($relatedObject, $relatedColumn, $type);
-                }
-            }
-            $relatedDataSet[] = $relatedData;
-        }
-
-        return $relatedDataSet;
-    }
-
-    private function extractNestedRelation(mixed $relatedObject, ?string $nestedRelation, ?array $nestedDetails): array
-    {
-        if (is_array($relatedObject->$nestedRelation) && count($relatedObject->$nestedRelation) > 0 && is_object($relatedObject->$nestedRelation[0])) {
-            return $this->extractManyRelation($relatedObject, $nestedRelation, $nestedDetails);
-        }
-
-        return $this->extractOneRelation($relatedObject, [$nestedRelation => $nestedDetails]);
-    }
-
-    /*
-    |--------------------------------------------------------------------------
-    | Resolve Display of Relations Methods
-    |--------------------------------------------------------------------------
-    */
-    private function resolveRelationKeys(array $relations): array
-    {
-        $selectedRelations = [];
-        collect($relations)->each(function ($relationValue, $relationName) use (&$selectedRelations) {
-            $selectedRelations[$relationName] = $this->guessRelationPattern($relationName, $relationValue);
-        });
-
-        return array_values($selectedRelations);
-    }
-
-    private function guessRelationPattern(string $relation, array $columns, ?string $parent = null): array|string
-    {
-        $nested = [];
-        $normalRelation = collect($columns)->filter(fn($r) => !is_array($r))->toArray();
-        $nestedRelations = collect($columns)->filter(fn($r) => is_array($r));
-        $patternColumns = implode(',', array_keys($normalRelation));
-
-        if ($nestedRelations->isNotEmpty()) {
-            $nestedRelations->each(function ($nestedRelation) use (&$nested, $relation) {
-                collect($nestedRelation)->each(function ($relationValue, $relationName) use (&$nested, $relation) {
-                    $nested[] = $this->guessRelationPattern($relationName, $relationValue, $relation);
-                });
-            });
-        }
-
-        $basicRelation = "$relation:$patternColumns";
-        if ($parent) {
-            $nested = !empty($nested) ? $this->nestedPattern($nested, $parent) : "$relation:$patternColumns";
-
-            if (!is_array($nested) && $basicRelation === $nested) {
-                $basicRelation = [];
-                $nested = "$parent.$nested";
-            } else {
-                $basicRelation = "$parent.$basicRelation";
-            }
-        }
-
-        if (is_string($nested)) {
-            $basicRelation = $nested;
-        }
-
-        return is_array($nested) && !empty($nested) ? Arr::flatten($nested) : $basicRelation;
-    }
-
-    private function nestedPattern(?array $nested = [], ?string $parent = null): array
-    {
-        return $parent && !empty($nested) ? array_map(function ($item) use ($parent) {
-            return is_array($item) ? $this->nestedPattern($item, $parent) : "$parent.$item";
-        }, $nested) : $nested;
-    }
-
-    /*
-    |--------------------------------------------------------------------------
-    | Filter Methods
-    |--------------------------------------------------------------------------
-    */
-    private function applyColumnFilter(array $nativeArray, string $type = 'column'): array
-    {
-        if (empty($this->filter['column'])) {
-            return $nativeArray;
-        }
-
-        if (!isArrayIndex($nativeArray)) {
-            if ($type === 'many') {
-                return Arr::only($nativeArray, $this->filter['related'] ?? []);
-            }
-
-            return Arr::only($nativeArray, $this->filter['columns'] ?? []);
-        }
-
-        //write condition here
-        if ($type === 'many') {
-            foreach ($nativeArray as $key => $value) {
-                if (!in_array($value, $this->filter['related'] ?? [], true)) {
-                    unset($nativeArray[$key]);
-                }
-            }
-        }
-
-        return $nativeArray;
-    }
-
-    /**
-     * Default filter implementation for generic models.
-     *
-     * Handles two things:
-     *   1. Date range via filter['start'] / filter['end'] on the configured dateColumn.
-     *   2. Advanced conditions via filter['advanced'] array.
-     *
-     * Subclasses that override this method take FULL responsibility for ALL filters,
-     * including date range. applyDateFilter() should NOT be called separately.
-     */
-    public function applyAdvancedFilter($query): void
-    {
-        $this->applyAdvanced($query);
-    }
-
-    /**
-     * @param $query
-     * @return void
-     */
-    public function applyDateFilter($query): void
-    {
-        if (isset($this->filter['start'])) {
-            $query->whereDate($this->dateColumn, '>=', $this->filter['start']);
-        }
-
-        if (isset($this->filter['end'])) {
-            $query->whereDate($this->dateColumn, '<=', $this->filter['end']);
-        }
-    }
-
-    public function pdfView(): string
-    {
-        return 'export::pdf.export';
-    }
-
-    public function pdfData(): array
-    {
-        $records = $this->buildQuery()->get();
-
-        // Get child class short name without "Export"
-        $type = class_basename(static::class);
-        $type = Str::plural(Str::snake(Str::replaceLast('Export', '', $type)));
-
-        // Example: TicketExport => tickets_title
-        $title = __("export::pdf.{$type}_title");
-
-        return [
-            'title'   => $title,
-            'columns' => array_map(fn ($h) => ['label' => $h, 'width' => 'auto'], $this->headings()),
-            'rows'    => $records->map(fn ($r) => array_values($this->map($r)))->toArray(),
-        ];
-    }
-
-    /**
-     * Detect foreign keys for given relations to ensure they are selected.
-     */
-    private function detectForeignKeys(array $relations): array
-    {
-        $keys = [];
-        $model = new $this->model;
-
-        foreach ($relations as $relation) {
-            // Only handle first level relations for foreign key detection
-            $baseRelation = explode('.', $relation)[0];
-
-            if (method_exists($model, $baseRelation)) {
-                try {
-                    $relInstance = $model->$baseRelation();
-                    if (method_exists($relInstance, 'getForeignKeyName')) {
-                        $keys[] = $relInstance->getForeignKeyName();
-                    } elseif (method_exists($relInstance, 'getForeignKey')) {
-                        $keys[] = $relInstance->getForeignKey();
-                    }
-                } catch (\Exception $e) {
-                    // Skip if relation cannot be initialized
-                }
-            }
-        }
-
-        return array_filter(array_unique($keys));
     }
 }
