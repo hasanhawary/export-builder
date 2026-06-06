@@ -1,0 +1,70 @@
+{
+  "name": "hasanhawary/export-builder",
+  "description": "A modular Laravel export builder around maatwebsite/excel (CSV/XLS/XLSX,PDF)",
+  "type": "library",
+  "license": "MIT",
+  "keywords": [
+    "laravel",
+    "export",
+    "excel",
+    "csv",
+    "pdf",
+    "xlsx",
+    "xls"
+  ],
+  "authors": [
+    {
+      "name": "Hasan Hawary",
+      "role": "Developer"
+    }
+  ],
+  "require": {
+    "php": ">=8.1 <8.6",
+    "illuminate/support": "^10.0|^11.0|^12.0|^13.0",
+    "illuminate/database": "^10.0|^11.0|^12.0|^13.0",
+    "maatwebsite/excel": "^3.1|^4.0",
+    "carlos-meneses/laravel-mpdf": "^2.0",
+    "nesbot/carbon": "^2.0|^3.0",
+    "symfony/http-foundation": "^5.4|^6.0|^7.0"
+  },
+  "require-dev": {
+    "phpunit/phpunit": "^9.5|^10.0|^11.0",
+    "orchestra/testbench": "^8.0|^9.0|^10.0"
+  },
+  "autoload": {
+    "psr-4": {
+      "HasanHawary\\ExportBuilder\\": "src/"
+    },
+    "files": [
+      "src/helpers.php"
+    ]
+  },
+  "autoload-dev": {
+    "psr-4": {
+      "HasanHawary\\ExportBuilder\\Tests\\": "tests/"
+    }
+  },
+  "scripts": {
+    "test": "vendor/bin/phpunit"
+  },
+  "extra": {
+    "laravel": {
+      "providers": [
+        "HasanHawary\\ExportBuilder\\ExportBuilderServiceProvider"
+      ],
+      "aliases": {
+        "Export": "HasanHawary\\ExportBuilder\\Facades\\Export"
+      }
+    }
+  },
+  "homepage": "https://github.com/hasanhawary/export-builder",
+  "support": {
+    "issues": "https://github.com/hasanhawary/export-builder/issues",
+    "source": "https://github.com/hasanhawary/export-builder"
+  },
+  "config": {
+    "sort-packages": true
+  },
+  "minimum-stability": "stable",
+  "prefer-stable": true
+}
