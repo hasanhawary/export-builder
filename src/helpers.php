@@ -18,7 +18,7 @@ if (! function_exists('eb_isArrayIndex')) {
 if (! function_exists('eb_resolveTrans')) {
     function eb_resolveTrans(
         mixed   $trans  = '',
-        string  $page   = 'api',
+        string  $page   = 'export',
         ?string $lang   = null,
         bool    $snaked = true
     ): string {

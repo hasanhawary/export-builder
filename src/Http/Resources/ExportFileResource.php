@@ -15,6 +15,7 @@ class ExportFileResource extends JsonResource
             'exportable_id' => $this->exportable_id,
             'format' => $this->format,
             'status' => $this->status,
+            'display_status' => eb_resolveTrans($this->status),
             'file_name' => $this->file_name,
             'file_path' => $this->file_path,
             'file_url' => $this->url(),

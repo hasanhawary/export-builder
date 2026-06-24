@@ -23,7 +23,6 @@ return [
     'total_records' => 'إجمالي السجلات',
     'columns'       => 'الأعمدة',
     'format'        => 'الصيغة',
-    'date'          => 'التاريخ',
     'records'       => 'سجلات',
 
     /*
@@ -62,4 +61,10 @@ return [
     'gender'       => 'الجنس',
     'male'         => 'ذكر',
     'female'       => 'أنثى',
+
+    // Status
+    'pending'    => 'قيد الانتظار',
+    'processing' => 'جاري التحميل',
+    'completed'  => 'مكتمل',
+    'failed'     => 'فشل',
 ];

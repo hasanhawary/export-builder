@@ -23,7 +23,6 @@ return [
     'total_records' => 'Total Records',
     'columns'       => 'Columns',
     'format'        => 'Format',
-    'date'          => 'Date',
     'records'       => 'Records',
 
     /*
@@ -64,4 +63,10 @@ return [
     'gender'       => 'Gender',
     'male'         => 'Male',
     'female'       => 'Female',
+
+    // Status
+    'pending'    => 'Pending',
+    'processing' => 'Loading',
+    'completed'  => 'Completed',
+    'failed'     => 'Failed',
 ];

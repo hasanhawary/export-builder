@@ -95,7 +95,7 @@ class ExportBuilder
     public static function buildFileName(array $filters, string $format): string
     {
         $base      = (string) ($filters['filename'] ?? $filters['page'] ?? 'export');
-        $timestamp = (string) ($filters['timestamp'] ?? now()->format('Ymd_His'));
+        $timestamp = (string) ($filters['timestamp'] ?? now()->format('Y_m_d_H_i'));
 
         return Str::slug("{$base}_{$timestamp}") . '.' . self::extensionForFormat($format);
     }
