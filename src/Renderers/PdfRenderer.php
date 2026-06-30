@@ -29,7 +29,10 @@ final class PdfRenderer
         $viewName = $exportObject->pdfView();
         $settings = $this->resolveSettings();
 
-        $viewData = array_merge($data, $this->filter, [
+        $safeFilter = $this->filter;
+        unset($safeFilter['columns']);
+
+        $viewData = array_merge($data, $safeFilter, [
             'data'        => $data,
             'start'       => ! empty($this->filter['start']) ? Carbon::parse($this->filter['start']) : null,
             'end'         => ! empty($this->filter['end'])   ? Carbon::parse($this->filter['end'])   : null,
