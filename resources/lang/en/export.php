@@ -1,6 +1,16 @@
 <?php
 
 return [
+    // Export job messages
+    'export_started_successfully' => 'Export started successfully.',
+    'export_deleted_successfully' => 'Export deleted successfully.',
+    'restored_successfully' => 'Record restored successfully.',
+    'record_not_found' => 'Record not found.',
+    'not_allowed_to_delete' => 'You are not allowed to delete this record.',
+    'not_allowed_to_restore' => 'You are not allowed to restore this record.',
+    'not_allowed_to_force' => 'You are not allowed to permanently delete this record.',
+    'not_allowed_to_delete_linked' => 'This record cannot be deleted because it has linked records.',
+
     /*
     |--------------------------------------------------------------------------
     | Boolean values

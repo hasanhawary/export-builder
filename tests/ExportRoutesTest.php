@@ -171,6 +171,38 @@ class ExportRoutesTest extends TestCase
         Queue::assertPushed(ExportToFile::class, fn (ExportToFile $job) => $job->exportId === $export->id);
     }
 
+    public function test_search_respects_ownership_status_and_sorting(): void
+    {
+        $this->migrateExportFilesTable();
+        $this->enablePackageRoutes(['middleware' => []]);
+        config()->set('export.module.permissions.enabled', true);
+        app(ExportRoutes::class)->register();
+
+        $attributes = [
+            'exportable_type' => 'user',
+            'created_by' => 10,
+            'file_name' => 'users.xlsx',
+            'format' => 'xlsx',
+            'status' => 'completed',
+        ];
+        $first = ExportFile::create($attributes);
+        $second = ExportFile::create(array_merge($attributes, ['file_name' => 'users-new.xlsx']));
+        ExportFile::create(array_merge($attributes, ['created_by' => 20]));
+        ExportFile::create(array_merge($attributes, ['status' => 'pending']));
+        ExportFile::create(array_merge($attributes, ['exportable_type' => 'invoice', 'file_name' => 'invoice.xlsx']));
+
+        $this->actingAs(new TestUser(['view-own-export-file'], 10))
+            ->getJson('/api/export-log?search=user&status=completed&per_page=-1&sort_column=id&sort_direction=asc')
+            ->assertOk()
+            ->assertJsonCount(2, 'data')
+            ->assertJsonPath('data.0.id', $first->id)
+            ->assertJsonPath('data.1.id', $second->id);
+
+        $this->getJson('/api/export-log?search=missing-search-term&per_page=-1')
+            ->assertOk()
+            ->assertJsonCount(0, 'data');
+    }
+
     public function test_permission_denies_direct_and_queued_exports(): void
     {
         $this->migrateExportFilesTable();
@@ -257,6 +289,8 @@ class ExportRoutesTest extends TestCase
         $this->migrateExportFilesTable();
         $this->enablePackageRoutes(['middleware' => []]);
         config()->set('export.module.permissions.enabled', false);
+        Storage::fake('local');
+        Storage::disk('local')->put('exports/delete-test.xlsx', 'content');
 
         app(ExportRoutes::class)->register();
         Route::getRoutes()->refreshNameLookups();
@@ -265,18 +299,53 @@ class ExportRoutesTest extends TestCase
             'exportable_type' => 'user',
             'created_by'      => 1,
             'file_name'       => 'users.xlsx',
-            'file_path'       => null,
+            'file_path'       => 'exports/delete-test.xlsx',
             'disk'            => 'local',
             'format'          => 'xlsx',
             'status'          => 'completed',
             'metadata'        => [],
         ]);
 
-        $this->deleteJson("/api/export-log/{$export->id}")
+        $otherExport = $export->replicate();
+        $otherExport->file_path = null;
+        $otherExport->save();
+
+        $this->deleteJson("/api/export-log/{$export->id}", ['ids' => [$otherExport->id]])
             ->assertOk()
             ->assertJsonPath('message', 'Export deleted successfully.');
 
         $this->assertSoftDeleted('export_files', ['id' => $export->id]);
+        Storage::disk('local')->assertMissing('exports/delete-test.xlsx');
+        $this->assertNotNull(ExportFile::find($otherExport->id));
+    }
+
+    public function test_delete_export_log_requires_permission_and_returns_not_found_for_missing_records(): void
+    {
+        $this->migrateExportFilesTable();
+        $this->enablePackageRoutes(['middleware' => []]);
+        config()->set('export.module.permissions.enabled', true);
+        Storage::fake('local');
+        Storage::disk('local')->put('exports/protected.xlsx', 'content');
+        app(ExportRoutes::class)->register();
+
+        $export = ExportFile::create([
+            'exportable_type' => 'user',
+            'created_by' => 10,
+            'format' => 'xlsx',
+            'status' => 'completed',
+            'disk' => 'local',
+            'file_path' => 'exports/protected.xlsx',
+        ]);
+
+        $this->actingAs(new TestUser(['view-own-export-file'], 10))
+            ->deleteJson("/api/export-log/{$export->id}")
+            ->assertForbidden();
+
+        $this->assertNotNull(ExportFile::find($export->id));
+        Storage::disk('local')->assertExists('exports/protected.xlsx');
+
+        config()->set('export.module.permissions.enabled', false);
+        $this->deleteJson('/api/export-log/999999')->assertNotFound();
     }
 
     public function test_delete_export_log_route_is_registered(): void

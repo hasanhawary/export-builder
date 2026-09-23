@@ -1,6 +1,9 @@
 <?php
 
 use HasanHawary\ExportBuilder\Support\ExportHelper;
+use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Database\Query\Builder as QueryBuilder;
+use Illuminate\Http\JsonResponse;
 
 /**
  * Global function aliases for ExportHelper static methods.
@@ -24,4 +27,42 @@ if (! function_exists('eb_resolveTrans')) {
     ): string {
         return ExportHelper::resolveTrans($trans, $page, $lang, $snaked);
     }
+}
+
+if (! function_exists('wrapPaginate')) {
+    function wrapPaginate(Builder|QueryBuilder $query, ?string $resource = null, array $meta = [])
+    {
+        $perPage = request('per_page', config('project.pagination.per_page'));
+
+        if ($perPage && (int) $perPage !== -1) {
+            $data = $query->paginate($perPage);
+
+            if ($resource) {
+                $data->data = $resource::collection($data);
+            }
+        } else {
+            $data = $resource ? $resource::collection($query->get()) : $query->get();
+        }
+
+        if (count($meta)) {
+            $data = [
+                'data' => $data,
+                ...$meta,
+            ];
+        }
+
+        return $data;
+    }
+
+    if (! function_exists('successResponse')) {
+    function successResponse($data = [], $msg = null, $code = 200): JsonResponse
+    {
+        return response()->json([
+            'status' => true,
+            'code' => $code,
+            'message' => $msg ?? __('api.success'),
+            'data' => $data,
+        ], $code);
+    }
+}
 }
