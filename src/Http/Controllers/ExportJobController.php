@@ -2,6 +2,9 @@
 
 namespace HasanHawary\ExportBuilder\Http\Controllers;
 
+use HasanHawary\ExportBuilder\Concerns\HasDeleteMethods;
+use HasanHawary\ExportBuilder\Concerns\OrderByFilter;
+use HasanHawary\ExportBuilder\Concerns\SearchFilter;
 use HasanHawary\ExportBuilder\Http\Requests\ExportRequest;
 use HasanHawary\ExportBuilder\Http\Resources\ExportFileResource;
 use HasanHawary\ExportBuilder\Jobs\ExportToFile;
@@ -10,19 +13,24 @@ use HasanHawary\ExportBuilder\Services\ExportFileService;
 use HasanHawary\ExportBuilder\Services\ExportPermissionResolver;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Pipeline\Pipeline;
 use Illuminate\Routing\Controller;
 use Illuminate\Support\Facades\Storage;
 use Symfony\Component\HttpFoundation\StreamedResponse;
+use function eb_resolveTrans;
+use function wrapPaginate;
 
 class ExportJobController extends Controller
 {
+    use HasDeleteMethods;
+
     public function index(Request $request): JsonResponse
     {
         $permissions = app(ExportPermissionResolver::class);
 
         abort_unless($permissions->canList($request->user()), 403);
 
-        $query = ExportFile::query()->latest();
+        $query = ExportFile::query();
 
         // Scope visibility through the resolver — the single owner of this logic.
         // Custom resolver overrides via config are honored here automatically.
@@ -36,11 +44,12 @@ class ExportJobController extends Controller
             $query->where('status', $request->string('status'));
         }
 
-        $perPage = min((int) $request->input('per_page', 15), 100);
+        $query = app(Pipeline::class)
+            ->send($query)
+            ->through([SearchFilter::class, OrderByFilter::class])
+            ->thenReturn();
 
-        return response()->json(
-            ExportFileResource::collection($query->paginate($perPage))->response()->getData(true)
-        );
+        return successResponse(wrapPaginate($query, ExportFileResource::class));
     }
 
     public function export(ExportRequest $request, ExportFileService $service, ExportPermissionResolver $permissions): JsonResponse
@@ -55,7 +64,7 @@ class ExportJobController extends Controller
 
         return response()->json([
             'data'    => new ExportFileResource($export->refresh()),
-            'message' => 'Export started successfully.',
+            'message' => eb_resolveTrans('export_started_successfully'),
         ], 202);
     }
 
@@ -80,14 +89,4 @@ class ExportJobController extends Controller
         return Storage::disk($disk)->download($export->file_path, $export->file_name);
     }
 
-    public function destroy(Request $request, int $exportFile, ExportFileService $service, ExportPermissionResolver $permissions): JsonResponse
-    {
-        $export = ExportFile::findOrFail($exportFile);
-
-        abort_unless($permissions->canDelete($request->user(), $export), 403);
-
-        $service->delete($export);
-
-        return response()->json(['message' => 'Export deleted successfully.']);
-    }
 }

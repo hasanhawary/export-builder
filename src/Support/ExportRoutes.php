@@ -30,7 +30,7 @@ class ExportRoutes
             $this->addRoute('get', $logUri, 'logs.index', [$jobController, 'index'], $namePrefix, $middleware);
             $this->addRoute('get', "{$logUri}/{exportFile}", 'logs.show', [$jobController, 'show'], $namePrefix, $middleware);
             $this->addRoute('get', "{$logUri}/{exportFile}/download", 'logs.download', [$jobController, 'download'], $namePrefix, $middleware);
-            $this->addRoute('delete', "{$logUri}/{exportFile}", 'logs.destroy', [$jobController, 'destroy'], $namePrefix, $middleware);
+            $this->addRoute('delete', "{$logUri}/delete", 'logs.destroy', [$jobController, 'destroy'], $namePrefix, $middleware);
         }
     }
 
