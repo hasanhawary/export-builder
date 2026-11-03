@@ -4,6 +4,8 @@ namespace HasanHawary\ExportBuilder\Concerns;
 
 use Closure;
 use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Support\Carbon;
+use Throwable;
 
 class ExportFileFilter
 {
@@ -12,6 +14,12 @@ class ExportFileFilter
         // "type" is a short alias for exportable_type ("page" is left for pagination).
         $this->applyFilter($query, 'exportable_type', request('exportable_type', request('type')));
         $this->applyFilter($query, 'status', request('status'));
+        $this->applyFilter($query, 'format', request('format'));
+        $this->applyFilter($query, 'created_by', request('created_by'));
+
+        // Date range on created_at, e.g. start=2026-01-01&end=2026-01-31 (both inclusive).
+        $this->applyDate($query, '>=', request('start'), startOfDay: true);
+        $this->applyDate($query, '<=', request('end'), startOfDay: false);
 
         return $next($query);
     }
@@ -37,5 +45,25 @@ class ExportFileFilter
         $values->count() === 1
             ? $query->where($column, $values->first())
             : $query->whereIn($column, $values->all());
+    }
+
+    /**
+     * Invalid dates are ignored instead of failing the request.
+     */
+    protected function applyDate(Builder $query, string $operator, mixed $value, bool $startOfDay): void
+    {
+        if (! is_string($value) || trim($value) === '') {
+            return;
+        }
+
+        try {
+            $date = Carbon::parse(trim($value));
+        } catch (Throwable) {
+            return;
+        }
+
+        $date = $startOfDay ? $date->startOfDay() : $date->endOfDay();
+
+        $query->where($query->getModel()->qualifyColumn('created_at'), $operator, $date);
     }
 }

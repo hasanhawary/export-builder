@@ -515,6 +515,34 @@ GET api/export-log/{id}/download  ← stream the file
 DELETE api/export-log/{id}   ← soft-delete record and remove stored file
 ```
 
+### Filtering the export history
+
+`GET api/export-log` accepts these query parameters:
+
+| Parameter | Example | Description |
+|---|---|---|
+| `exportable_type` / `type` | `type=user` | Export page (the `page` value sent to `POST api/export`). `type` is a short alias. |
+| `status` | `status=completed` | `pending`, `processing`, `completed`, `failed` |
+| `format` | `format=pdf` | `xlsx`, `xls`, `csv`, `pdf` |
+| `created_by` | `created_by=10` | ID of the user who started the export |
+| `start` | `start=2026-01-01` | Created on or after this date |
+| `end` | `end=2026-01-31` | Created on or before this date (whole day included) |
+| `search` | `search=invoice` | Matches id, file name, type, format or status |
+| `sort_column` | `sort_column=created_at` | Any `export_files` column (default `id`) |
+| `sort_direction` | `sort_direction=asc` | `asc` or `desc` (default `desc`) |
+| `per_page` | `per_page=15` | Page size; `-1` returns everything |
+| `page` | `page=2` | Page number |
+
+`exportable_type`, `status`, `format` and `created_by` accept several values as a comma-separated list or an array:
+
+```
+GET api/export-log?format=pdf,xlsx&status=completed
+GET api/export-log?status[]=pending&status[]=failed
+GET api/export-log?type=user&start=2026-01-01&end=2026-01-31&page=2
+```
+
+Empty values and invalid dates are ignored. Filters only narrow the results the user is already allowed to see (see [Permissions](#permissions)).
+
 Files are stored on the configured disk:
 
 ```php
