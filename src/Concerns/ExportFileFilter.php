@@ -9,21 +9,11 @@ class ExportFileFilter
 {
     public function handle(Builder $query, Closure $next): Builder
     {
-        $this->applyFilter($query, 'exportable_type', request('exportable_type', $this->pageAlias()));
+        // "type" is a short alias for exportable_type ("page" is left for pagination).
+        $this->applyFilter($query, 'exportable_type', request('exportable_type', request('type')));
         $this->applyFilter($query, 'status', request('status'));
 
         return $next($query);
-    }
-
-    /**
-     * "page" is the key used when the export is created, so accept it as an alias for exportable_type.
-     * Numeric values are left alone because paginate() uses "page" as the page number.
-     */
-    protected function pageAlias(): mixed
-    {
-        $page = request('page');
-
-        return is_numeric($page) ? null : $page;
     }
 
     /**
