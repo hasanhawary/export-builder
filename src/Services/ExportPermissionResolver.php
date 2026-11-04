@@ -89,6 +89,11 @@ class ExportPermissionResolver
      */
     public function canView(?Authenticatable $user, ExportFile $exportFile): bool
     {
+        // With permissions disabled, users can still only open their own files.
+        if (! $this->enabled()) {
+            return $this->owns($this->resolveUser($user), $exportFile);
+        }
+
         return $this->check($user, function (Authenticatable $u) use ($exportFile): bool {
             if ($this->userCan($u, config('export.module.permissions.abilities.view_all', 'view-all-export-file'))) {
                 return true;
@@ -105,6 +110,10 @@ class ExportPermissionResolver
      */
     public function canDelete(?Authenticatable $user, ExportFile $exportFile): bool
     {
+        if (! $this->enabled()) {
+            return $this->canView($user, $exportFile);
+        }
+
         return $this->check($user, function (Authenticatable $u) use ($exportFile): bool {
             return $this->userCan($u, config('export.module.permissions.abilities.delete', 'delete-export-file'))
                 && $this->canView($u, $exportFile);
@@ -138,6 +147,20 @@ class ExportPermissionResolver
         }
 
         return $logic($user);
+    }
+
+    /**
+     * Same rule as scopeForUser() when permissions are disabled:
+     * users own the files they created, guests own files with no creator.
+     */
+    private function owns(?Authenticatable $user, ExportFile $exportFile): bool
+    {
+        if (! $user) {
+            return $exportFile->created_by === null;
+        }
+
+        return $exportFile->created_by !== null
+            && (int) $exportFile->created_by === (int) $user->getAuthIdentifier();
     }
 
     private function enabled(): bool

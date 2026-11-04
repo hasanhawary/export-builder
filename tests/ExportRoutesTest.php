@@ -310,13 +310,50 @@ class ExportRoutesTest extends TestCase
         $otherExport->file_path = null;
         $otherExport->save();
 
-        $this->deleteJson("/api/export-log/{$export->id}", ['ids' => [$otherExport->id]])
+        // Permissions are disabled, but users can still only delete their own files.
+        $this->actingAs(new TestUser([], 2))
+            ->deleteJson("/api/export-log/{$export->id}")
+            ->assertForbidden();
+        $this->assertNotNull(ExportFile::find($export->id));
+
+        $this->actingAs(new TestUser([], 1))
+            ->deleteJson("/api/export-log/{$export->id}", ['ids' => [$otherExport->id]])
             ->assertOk()
             ->assertJsonPath('message', 'Export deleted successfully.');
 
         $this->assertSoftDeleted('export_files', ['id' => $export->id]);
         Storage::disk('local')->assertMissing('exports/delete-test.xlsx');
         $this->assertNotNull(ExportFile::find($otherExport->id));
+    }
+
+    public function test_download_is_limited_to_owner_when_permissions_disabled(): void
+    {
+        $this->migrateExportFilesTable();
+        $this->enablePackageRoutes(['middleware' => []]);
+        config()->set('export.module.permissions.enabled', false);
+        Storage::fake('local');
+        Storage::disk('local')->put('exports/own.xlsx', 'content');
+        app(ExportRoutes::class)->register();
+
+        $export = ExportFile::create([
+            'exportable_type' => 'user',
+            'created_by' => 10,
+            'file_name' => 'own.xlsx',
+            'file_path' => 'exports/own.xlsx',
+            'disk' => 'local',
+            'format' => 'xlsx',
+            'status' => 'completed',
+        ]);
+
+        $this->get("/api/export-log/{$export->id}/download")->assertForbidden();
+
+        $this->actingAs(new TestUser([], 20))
+            ->get("/api/export-log/{$export->id}/download")
+            ->assertForbidden();
+
+        $this->actingAs(new TestUser([], 10))
+            ->get("/api/export-log/{$export->id}/download")
+            ->assertOk();
     }
 
     public function test_delete_export_log_requires_permission_and_returns_not_found_for_missing_records(): void

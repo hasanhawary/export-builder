@@ -8,7 +8,7 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) — [Semantic V
 ## [Unreleased]
 
 ### Changed
-- `GET api/export-log` now lists only the current user's exports when permissions are disabled (previously it listed every export). Guests only see exports with no owner.
+- When permissions are disabled, export history (list, show, download, delete) is now limited to the current user's own exports. Previously every user could reach every export. Guests can only reach exports with no owner.
 
 ### Added
 - Export history filters: `type` / `exportable_type`, `status`, `format`, `created_by`, `start` / `end` date range. Multiple values accepted as a comma-separated list or an array.

@@ -584,7 +584,7 @@ All package routes default to the `api` prefix. They never claim a URI already o
 
 ## Permissions
 
-Disabled by default. While disabled, `GET api/export-log` still only lists the logged-in user's own exports (`created_by` = current user); guests only see exports with no owner.
+Disabled by default. While disabled, users can still only list, show, download and delete their own exports (`created_by` = current user); guests can only reach exports with no owner.
 
 Enable and configure per-page abilities:
 
