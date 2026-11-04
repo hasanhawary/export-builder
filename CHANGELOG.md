@@ -5,6 +5,20 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) — [Semantic V
 
 ---
 
+## [Unreleased]
+
+### Changed
+- When permissions are disabled, export history (list, show, download, delete) is now limited to the current user's own exports. Previously every user could reach every export. Guests can only reach exports with no owner.
+
+### Fixed
+- Permissions that are not created yet (spatie `PermissionDoesNotExist`) now return `403` instead of a `500` error.
+
+### Added
+- README: how to register the export permissions with `hasanhawary/permission-manager` (`additional_operations` in `config/roles.php`).
+- Export history filters: `type` / `exportable_type`, `status`, `format`, `created_by`, `start` / `end` date range. Multiple values accepted as a comma-separated list or an array.
+
+---
+
 ## [2.0.0] - 2026-06-05
 
 ### Breaking Changes

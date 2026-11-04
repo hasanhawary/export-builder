@@ -380,22 +380,97 @@ class ArchitectureTest extends TestCase
     }
 
     #[\PHPUnit\Framework\Attributes\Test]
-    public function scope_for_user_returns_all_when_permissions_disabled(): void
+    public function scope_for_user_returns_only_own_records_when_permissions_disabled(): void
     {
         $this->migrateExportFilesTable();
         config()->set('export.module.permissions.enabled', false);
 
-        ExportFile::create([
+        $attributes = [
             'exportable_type' => 'user', 'format' => 'xlsx',
-            'status' => 'completed', 'disk' => 'local',
-            'metadata' => [], 'created_by' => 99,
-        ]);
+            'status' => 'completed', 'disk' => 'local', 'metadata' => [],
+        ];
+        $own = ExportFile::create($attributes + ['created_by' => 1]);
+        ExportFile::create($attributes + ['created_by' => 99]);
+        $guest = ExportFile::create($attributes + ['created_by' => null]);
 
         $resolver = new ExportPermissionResolver;
-        $query    = ExportFile::query();
-        $resolver->scopeForUser($query, new ArchTestUser([], 1));
 
-        $this->assertCount(1, $query->get());
+        $query = ExportFile::query();
+        $resolver->scopeForUser($query, new ArchTestUser([], 1));
+        $this->assertSame([$own->id], $query->pluck('id')->all());
+
+        $query = ExportFile::query();
+        $resolver->scopeForUser($query, null);
+        $this->assertSame([$guest->id], $query->pluck('id')->all());
+    }
+
+    #[\PHPUnit\Framework\Attributes\Test]
+    public function view_and_delete_permissions_follow_view_all_and_view_own_rules(): void
+    {
+        $resolver = new ExportPermissionResolver;
+        $file     = new ExportFile(['created_by' => 10]);
+        $guestFile = new ExportFile(['created_by' => null]);
+
+        $owner = fn (array $abilities) => new ArchTestUser($abilities, 10);
+        $other = fn (array $abilities) => new ArchTestUser($abilities, 20);
+
+        // Permissions enabled
+        config()->set('export.module.permissions.enabled', true);
+
+        $this->assertTrue($resolver->canView($other(['view-all-export-file']), $file));
+        $this->assertTrue($resolver->canView($owner(['view-own-export-file']), $file));
+        $this->assertFalse($resolver->canView($other(['view-own-export-file']), $file));
+        $this->assertFalse($resolver->canView($owner([]), $file));
+        $this->assertFalse($resolver->canView(null, $file));
+
+        $this->assertTrue($resolver->canDelete($other(['view-all-export-file', 'delete-export-file']), $file));
+        $this->assertTrue($resolver->canDelete($owner(['view-own-export-file', 'delete-export-file']), $file));
+        $this->assertFalse($resolver->canDelete($other(['view-own-export-file', 'delete-export-file']), $file));
+        $this->assertFalse($resolver->canDelete($owner(['view-own-export-file']), $file));
+        $this->assertFalse($resolver->canDelete($owner(['delete-export-file']), $file));
+
+        $this->assertTrue($resolver->canList($owner(['view-all-export-file'])));
+        $this->assertTrue($resolver->canList($owner(['view-own-export-file'])));
+        $this->assertFalse($resolver->canList($owner([])));
+
+        // Permissions disabled: only the owner, abilities are ignored
+        config()->set('export.module.permissions.enabled', false);
+
+        $this->assertTrue($resolver->canView($owner([]), $file));
+        $this->assertFalse($resolver->canView($other(['view-all-export-file']), $file));
+        $this->assertFalse($resolver->canView(null, $file));
+        $this->assertTrue($resolver->canView(null, $guestFile));
+        $this->assertFalse($resolver->canView($owner([]), $guestFile));
+
+        $this->assertTrue($resolver->canDelete($owner([]), $file));
+        $this->assertFalse($resolver->canDelete($other(['delete-export-file']), $file));
+    }
+
+    #[\PHPUnit\Framework\Attributes\Test]
+    public function permissions_not_seeded_yet_are_denied_instead_of_throwing(): void
+    {
+        // Stand-in for spatie/laravel-permission, which is not a dependency of this package.
+        if (! class_exists(\Spatie\Permission\Exceptions\PermissionDoesNotExist::class)) {
+            eval('namespace Spatie\Permission\Exceptions; class PermissionDoesNotExist extends \InvalidArgumentException {}');
+        }
+
+        config()->set('export.module.permissions.enabled', true);
+        $resolver = new ExportPermissionResolver;
+        $file     = new ExportFile(['created_by' => 10]);
+
+        // Only view-own is seeded; every other permission throws like Spatie does.
+        $user = new SpatieLikeTestUser(seeded: ['view-own-export-file'], granted: ['view-own-export-file'], userId: 10);
+
+        $this->assertTrue($resolver->canList($user));
+        $this->assertTrue($resolver->canView($user, $file));
+        $this->assertFalse($resolver->canDelete($user, $file));
+        $this->assertFalse($resolver->canExport($user, ['page' => 'user']));
+        $this->assertFalse($resolver->canCreateQueued($user, ['page' => 'user']));
+
+        // Other errors are not swallowed.
+        $broken = new SpatieLikeTestUser(seeded: [], granted: [], userId: 10, failWith: new \RuntimeException('db down'));
+        $this->expectExceptionMessage('db down');
+        $resolver->canList($broken);
     }
 }
 
@@ -445,6 +520,42 @@ class ArchTestUser extends AuthenticatableUser
             }
         }
         return false;
+    }
+}
+
+/**
+ * Mimics spatie/laravel-permission: hasPermissionTo() throws for permissions that do not exist.
+ */
+class SpatieLikeTestUser extends AuthenticatableUser
+{
+    public function __construct(
+        private array $seeded = [],
+        private array $granted = [],
+        private int $userId = 1,
+        private ?\Throwable $failWith = null,
+    ) {
+        $this->setAttribute('id', $userId);
+    }
+
+    public function getAuthIdentifierName(): string { return 'id'; }
+    public function getAuthIdentifier(): int        { return $this->userId; }
+
+    public function can($abilities, $arguments = []): bool
+    {
+        return false;
+    }
+
+    public function hasPermissionTo($permission, $guardName = null): bool
+    {
+        if ($this->failWith) {
+            throw $this->failWith;
+        }
+
+        if (! in_array($permission, $this->seeded, true)) {
+            throw new \Spatie\Permission\Exceptions\PermissionDoesNotExist("There is no permission named `{$permission}`.");
+        }
+
+        return in_array($permission, $this->granted, true);
     }
 }
 

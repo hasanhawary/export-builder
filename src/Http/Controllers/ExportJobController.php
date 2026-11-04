@@ -2,6 +2,7 @@
 
 namespace HasanHawary\ExportBuilder\Http\Controllers;
 
+use HasanHawary\ExportBuilder\Concerns\ExportFileFilter;
 use HasanHawary\ExportBuilder\Concerns\HasDeleteMethods;
 use HasanHawary\ExportBuilder\Concerns\OrderByFilter;
 use HasanHawary\ExportBuilder\Concerns\SearchFilter;
@@ -36,17 +37,9 @@ class ExportJobController extends Controller
         // Custom resolver overrides via config are honored here automatically.
         $permissions->scopeForUser($query, $request->user());
 
-        if ($request->filled('exportable_type')) {
-            $query->where('exportable_type', $request->string('exportable_type'));
-        }
-
-        if ($request->filled('status')) {
-            $query->where('status', $request->string('status'));
-        }
-
         $query = app(Pipeline::class)
             ->send($query)
-            ->through([SearchFilter::class, OrderByFilter::class])
+            ->through([ExportFileFilter::class, SearchFilter::class, OrderByFilter::class])
             ->thenReturn();
 
         return successResponse(wrapPaginate($query, ExportFileResource::class));

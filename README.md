@@ -512,8 +512,42 @@ Poll for completion:
 GET api/export-log           ← list all (paginated, ?per_page=15&status=completed)
 GET api/export-log/{id}      ← show one
 GET api/export-log/{id}/download  ← stream the file
-DELETE api/export-log/{id}   ← soft-delete record and remove stored file
+DELETE api/export-log/delete ← soft-delete records and remove stored files
 ```
+
+Send the ids to delete in the request body. Each record is checked against the user's permissions; if any one is not allowed, nothing is deleted and the response is `403`.
+
+```json
+{ "ids": [1, 2, 3] }
+```
+
+### Filtering the export history
+
+`GET api/export-log` accepts these query parameters:
+
+| Parameter | Example | Description |
+|---|---|---|
+| `exportable_type` / `type` | `type=user` | Export page (the `page` value sent to `POST api/export`). `type` is a short alias. |
+| `status` | `status=completed` | `pending`, `processing`, `completed`, `failed` |
+| `format` | `format=pdf` | `xlsx`, `xls`, `csv`, `pdf` |
+| `created_by` | `created_by=10` | ID of the user who started the export |
+| `start` | `start=2026-01-01` | Created on or after this date |
+| `end` | `end=2026-01-31` | Created on or before this date (whole day included) |
+| `search` | `search=invoice` | Matches id, file name, type, format or status |
+| `sort_column` | `sort_column=created_at` | Any `export_files` column (default `id`) |
+| `sort_direction` | `sort_direction=asc` | `asc` or `desc` (default `desc`) |
+| `per_page` | `per_page=15` | Page size; `-1` returns everything |
+| `page` | `page=2` | Page number |
+
+`exportable_type`, `status`, `format` and `created_by` accept several values as a comma-separated list or an array:
+
+```
+GET api/export-log?format=pdf,xlsx&status=completed
+GET api/export-log?status[]=pending&status[]=failed
+GET api/export-log?type=user&start=2026-01-01&end=2026-01-31&page=2
+```
+
+Empty values and invalid dates are ignored. The list is always limited to the exports the current user may see, and filters only narrow that further (see [Permissions](#permissions)).
 
 Files are stored on the configured disk:
 
@@ -535,7 +569,7 @@ All package routes default to the `api` prefix. They never claim a URI already o
 | `GET` | `api/export-log` | `export-builder.export.logs.index` | List export history |
 | `GET` | `api/export-log/{id}` | `export-builder.export.logs.show` | Show one export record |
 | `GET` | `api/export-log/{id}/download` | `export-builder.export.logs.download` | Download exported file |
-| `DELETE` | `api/export-log/{id}` | `export-builder.export.logs.destroy` | Delete record and file |
+| `DELETE` | `api/export-log/delete` | `export-builder.export.logs.destroy` | Delete records and files (`ids` in the body) |
 
 **Disable all package routes:**
 
@@ -556,7 +590,9 @@ All package routes default to the `api` prefix. They never claim a URI already o
 
 ## Permissions
 
-Disabled by default. Enable and configure per-page abilities:
+Disabled by default. While disabled, users can still only list, show, download and delete their own exports (`created_by` = current user); guests can only reach exports with no owner.
+
+Enable and configure per-page abilities:
 
 ```php
 'permissions' => [
@@ -576,6 +612,80 @@ Disabled by default. Enable and configure per-page abilities:
     ],
 ],
 ```
+
+### Registering the permissions in your project
+
+The abilities above must exist in your project's permission table, otherwise nobody can be given them. Permissions that are not created yet are treated as "not allowed" (`403`), never as a server error.
+
+**With [hasanhawary/permission-manager](https://packagist.org/packages/hasanhawary/permission-manager)**
+
+`ExportFile` lives in this package, not in `app/Models`, so it is not discovered automatically. Add it to `additional_operations` in `config/roles.php`:
+
+```php
+'additional_operations' => [
+    [
+        'name' => 'ExportFile',
+        'operations' => ['create', 'view-all', 'view-own', 'delete'],
+    ],
+],
+```
+
+This generates exactly the default abilities:
+
+```
+create-export-file
+view-all-export-file
+view-own-export-file
+delete-export-file
+```
+
+Give them to your roles in the same file:
+
+```php
+'roles' => [
+    'employee' => [
+        'permissions' => [
+            'ExportFile' => ['create', 'view-own', 'delete'],
+        ],
+    ],
+    'manager' => [
+        'permissions' => [
+            'ExportFile' => ['create', 'view-all', 'delete'],
+        ],
+    ],
+],
+```
+
+For exporting a page, add an `export` operation to that page's model (for example `App\Models\User`) and map it per page:
+
+```php
+// app/Models/User.php
+public bool $inPermission = true;
+public array $specialOperations = ['export']; // → export-user
+```
+
+```php
+// config/export.php
+'pages' => [
+    'user' => [
+        'export' => 'export-user',
+        'queue'  => 'export-user',
+    ],
+],
+```
+
+Then create the permissions and turn the check on:
+
+```bash
+php artisan permissions:reset --skip
+```
+
+```php
+// config/export.php
+'permissions' => ['enabled' => true, /* ... */],
+```
+
+**Without permission-manager** — create the same names with spatie directly, e.g. `Permission::create(['name' => 'view-own-export-file'])`, or use any ability your `User::can()` understands.
 
 **Custom resolver** — replace the entire permission logic:
 
