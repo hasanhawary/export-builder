@@ -52,7 +52,7 @@ class ExportPermissionResolver
     /**
      * Apply the correct visibility scope to an ExportFile query for a given user.
      *
-     * - permissions disabled → no restriction
+     * - permissions disabled → only the current user's records (guests: records with no owner)
      * - view-all             → no restriction
      * - view-own             → only own records
      * - neither              → empty result set
@@ -61,11 +61,13 @@ class ExportPermissionResolver
      */
     public function scopeForUser(Builder $query, ?Authenticatable $user): Builder
     {
-        if (! $this->enabled()) {
-            return $query;
-        }
-
         $user = $this->resolveUser($user);
+
+        if (! $this->enabled()) {
+            return $user
+                ? $query->where('created_by', $user->getAuthIdentifier())
+                : $query->whereNull('created_by');
+        }
 
         if (! $user) {
             return $query->whereRaw('1 = 0');

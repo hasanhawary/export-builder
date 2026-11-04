@@ -380,22 +380,28 @@ class ArchitectureTest extends TestCase
     }
 
     #[\PHPUnit\Framework\Attributes\Test]
-    public function scope_for_user_returns_all_when_permissions_disabled(): void
+    public function scope_for_user_returns_only_own_records_when_permissions_disabled(): void
     {
         $this->migrateExportFilesTable();
         config()->set('export.module.permissions.enabled', false);
 
-        ExportFile::create([
+        $attributes = [
             'exportable_type' => 'user', 'format' => 'xlsx',
-            'status' => 'completed', 'disk' => 'local',
-            'metadata' => [], 'created_by' => 99,
-        ]);
+            'status' => 'completed', 'disk' => 'local', 'metadata' => [],
+        ];
+        $own = ExportFile::create($attributes + ['created_by' => 1]);
+        ExportFile::create($attributes + ['created_by' => 99]);
+        $guest = ExportFile::create($attributes + ['created_by' => null]);
 
         $resolver = new ExportPermissionResolver;
-        $query    = ExportFile::query();
-        $resolver->scopeForUser($query, new ArchTestUser([], 1));
 
-        $this->assertCount(1, $query->get());
+        $query = ExportFile::query();
+        $resolver->scopeForUser($query, new ArchTestUser([], 1));
+        $this->assertSame([$own->id], $query->pluck('id')->all());
+
+        $query = ExportFile::query();
+        $resolver->scopeForUser($query, null);
+        $this->assertSame([$guest->id], $query->pluck('id')->all());
     }
 }
 

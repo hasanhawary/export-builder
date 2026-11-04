@@ -541,7 +541,7 @@ GET api/export-log?status[]=pending&status[]=failed
 GET api/export-log?type=user&start=2026-01-01&end=2026-01-31&page=2
 ```
 
-Empty values and invalid dates are ignored. Filters only narrow the results the user is already allowed to see (see [Permissions](#permissions)).
+Empty values and invalid dates are ignored. The list is always limited to the exports the current user may see, and filters only narrow that further (see [Permissions](#permissions)).
 
 Files are stored on the configured disk:
 
@@ -584,7 +584,9 @@ All package routes default to the `api` prefix. They never claim a URI already o
 
 ## Permissions
 
-Disabled by default. Enable and configure per-page abilities:
+Disabled by default. While disabled, `GET api/export-log` still only lists the logged-in user's own exports (`created_by` = current user); guests only see exports with no owner.
+
+Enable and configure per-page abilities:
 
 ```php
 'permissions' => [
