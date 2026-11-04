@@ -5,6 +5,7 @@ namespace HasanHawary\ExportBuilder\Services;
 use HasanHawary\ExportBuilder\Models\ExportFile;
 use Illuminate\Contracts\Auth\Authenticatable;
 use Illuminate\Database\Eloquent\Builder;
+use Throwable;
 
 class ExportPermissionResolver
 {
@@ -150,6 +151,23 @@ class ExportPermissionResolver
     }
 
     /**
+     * Spatie throws PermissionDoesNotExist for permissions that are not seeded yet.
+     * Treat that as "not allowed" (403) instead of a 500 error.
+     */
+    private function hasPermission(Authenticatable $user, string $ability): bool
+    {
+        try {
+            return (bool) $user->hasPermissionTo($ability);
+        } catch (Throwable $e) {
+            if ($e instanceof \Spatie\Permission\Exceptions\PermissionDoesNotExist) {
+                return false;
+            }
+
+            throw $e;
+        }
+    }
+
+    /**
      * Same rule as scopeForUser() when permissions are disabled:
      * users own the files they created, guests own files with no creator.
      */
@@ -176,7 +194,7 @@ class ExportPermissionResolver
     private function userCan(Authenticatable $user, string|array $abilities): bool
     {
         foreach ((array) $abilities as $ability) {
-            if (method_exists($user, 'hasPermissionTo') && $user->hasPermissionTo($ability)) {
+            if (method_exists($user, 'hasPermissionTo') && $this->hasPermission($user, $ability)) {
                 return true;
             }
 

@@ -613,6 +613,80 @@ Enable and configure per-page abilities:
 ],
 ```
 
+### Registering the permissions in your project
+
+The abilities above must exist in your project's permission table, otherwise nobody can be given them. Permissions that are not created yet are treated as "not allowed" (`403`), never as a server error.
+
+**With [hasanhawary/permission-manager](https://packagist.org/packages/hasanhawary/permission-manager)**
+
+`ExportFile` lives in this package, not in `app/Models`, so it is not discovered automatically. Add it to `additional_operations` in `config/roles.php`:
+
+```php
+'additional_operations' => [
+    [
+        'name' => 'ExportFile',
+        'operations' => ['create', 'view-all', 'view-own', 'delete'],
+    ],
+],
+```
+
+This generates exactly the default abilities:
+
+```
+create-export-file
+view-all-export-file
+view-own-export-file
+delete-export-file
+```
+
+Give them to your roles in the same file:
+
+```php
+'roles' => [
+    'employee' => [
+        'permissions' => [
+            'ExportFile' => ['create', 'view-own', 'delete'],
+        ],
+    ],
+    'manager' => [
+        'permissions' => [
+            'ExportFile' => ['create', 'view-all', 'delete'],
+        ],
+    ],
+],
+```
+
+For exporting a page, add an `export` operation to that page's model (for example `App\Models\User`) and map it per page:
+
+```php
+// app/Models/User.php
+public bool $inPermission = true;
+public array $specialOperations = ['export']; // → export-user
+```
+
+```php
+// config/export.php
+'pages' => [
+    'user' => [
+        'export' => 'export-user',
+        'queue'  => 'export-user',
+    ],
+],
+```
+
+Then create the permissions and turn the check on:
+
+```bash
+php artisan permissions:reset --skip
+```
+
+```php
+// config/export.php
+'permissions' => ['enabled' => true, /* ... */],
+```
+
+**Without permission-manager** — create the same names with spatie directly, e.g. `Permission::create(['name' => 'view-own-export-file'])`, or use any ability your `User::can()` understands.
+
 **Custom resolver** — replace the entire permission logic:
 
 ```php
