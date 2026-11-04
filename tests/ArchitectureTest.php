@@ -403,6 +403,48 @@ class ArchitectureTest extends TestCase
         $resolver->scopeForUser($query, null);
         $this->assertSame([$guest->id], $query->pluck('id')->all());
     }
+
+    #[\PHPUnit\Framework\Attributes\Test]
+    public function view_and_delete_permissions_follow_view_all_and_view_own_rules(): void
+    {
+        $resolver = new ExportPermissionResolver;
+        $file     = new ExportFile(['created_by' => 10]);
+        $guestFile = new ExportFile(['created_by' => null]);
+
+        $owner = fn (array $abilities) => new ArchTestUser($abilities, 10);
+        $other = fn (array $abilities) => new ArchTestUser($abilities, 20);
+
+        // Permissions enabled
+        config()->set('export.module.permissions.enabled', true);
+
+        $this->assertTrue($resolver->canView($other(['view-all-export-file']), $file));
+        $this->assertTrue($resolver->canView($owner(['view-own-export-file']), $file));
+        $this->assertFalse($resolver->canView($other(['view-own-export-file']), $file));
+        $this->assertFalse($resolver->canView($owner([]), $file));
+        $this->assertFalse($resolver->canView(null, $file));
+
+        $this->assertTrue($resolver->canDelete($other(['view-all-export-file', 'delete-export-file']), $file));
+        $this->assertTrue($resolver->canDelete($owner(['view-own-export-file', 'delete-export-file']), $file));
+        $this->assertFalse($resolver->canDelete($other(['view-own-export-file', 'delete-export-file']), $file));
+        $this->assertFalse($resolver->canDelete($owner(['view-own-export-file']), $file));
+        $this->assertFalse($resolver->canDelete($owner(['delete-export-file']), $file));
+
+        $this->assertTrue($resolver->canList($owner(['view-all-export-file'])));
+        $this->assertTrue($resolver->canList($owner(['view-own-export-file'])));
+        $this->assertFalse($resolver->canList($owner([])));
+
+        // Permissions disabled: only the owner, abilities are ignored
+        config()->set('export.module.permissions.enabled', false);
+
+        $this->assertTrue($resolver->canView($owner([]), $file));
+        $this->assertFalse($resolver->canView($other(['view-all-export-file']), $file));
+        $this->assertFalse($resolver->canView(null, $file));
+        $this->assertTrue($resolver->canView(null, $guestFile));
+        $this->assertFalse($resolver->canView($owner([]), $guestFile));
+
+        $this->assertTrue($resolver->canDelete($owner([]), $file));
+        $this->assertFalse($resolver->canDelete($other(['delete-export-file']), $file));
+    }
 }
 
 // ---------------------------------------------------------------------------
