@@ -512,7 +512,13 @@ Poll for completion:
 GET api/export-log           ← list all (paginated, ?per_page=15&status=completed)
 GET api/export-log/{id}      ← show one
 GET api/export-log/{id}/download  ← stream the file
-DELETE api/export-log/{id}   ← soft-delete record and remove stored file
+DELETE api/export-log/delete ← soft-delete records and remove stored files
+```
+
+Send the ids to delete in the request body. Each record is checked against the user's permissions; if any one is not allowed, nothing is deleted and the response is `403`.
+
+```json
+{ "ids": [1, 2, 3] }
 ```
 
 ### Filtering the export history
@@ -563,7 +569,7 @@ All package routes default to the `api` prefix. They never claim a URI already o
 | `GET` | `api/export-log` | `export-builder.export.logs.index` | List export history |
 | `GET` | `api/export-log/{id}` | `export-builder.export.logs.show` | Show one export record |
 | `GET` | `api/export-log/{id}/download` | `export-builder.export.logs.download` | Download exported file |
-| `DELETE` | `api/export-log/{id}` | `export-builder.export.logs.destroy` | Delete record and file |
+| `DELETE` | `api/export-log/delete` | `export-builder.export.logs.destroy` | Delete records and files (`ids` in the body) |
 
 **Disable all package routes:**
 

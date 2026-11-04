@@ -312,12 +312,12 @@ class ExportRoutesTest extends TestCase
 
         // Permissions are disabled, but users can still only delete their own files.
         $this->actingAs(new TestUser([], 2))
-            ->deleteJson("/api/export-log/{$export->id}")
+            ->deleteJson('/api/export-log/delete', ['ids' => [$export->id]])
             ->assertForbidden();
         $this->assertNotNull(ExportFile::find($export->id));
 
         $this->actingAs(new TestUser([], 1))
-            ->deleteJson("/api/export-log/{$export->id}", ['ids' => [$otherExport->id]])
+            ->deleteJson('/api/export-log/delete', ['ids' => [$export->id]])
             ->assertOk()
             ->assertJsonPath('message', 'Export deleted successfully.');
 
@@ -375,14 +375,14 @@ class ExportRoutesTest extends TestCase
         ]);
 
         $this->actingAs(new TestUser(['view-own-export-file'], 10))
-            ->deleteJson("/api/export-log/{$export->id}")
+            ->deleteJson('/api/export-log/delete', ['ids' => [$export->id]])
             ->assertForbidden();
 
         $this->assertNotNull(ExportFile::find($export->id));
         Storage::disk('local')->assertExists('exports/protected.xlsx');
 
         config()->set('export.module.permissions.enabled', false);
-        $this->deleteJson('/api/export-log/999999')->assertNotFound();
+        $this->deleteJson('/api/export-log/delete', ['ids' => [999999]])->assertNotFound();
     }
 
     public function test_delete_export_log_route_is_registered(): void
@@ -395,7 +395,7 @@ class ExportRoutesTest extends TestCase
         $route = Route::getRoutes()->getByName('export-builder.export.logs.destroy');
 
         $this->assertNotNull($route);
-        $this->assertSame('api/export-log/{exportFile}', $route->uri());
+        $this->assertSame('api/export-log/delete', $route->uri());
         $this->assertContains('DELETE', $route->methods());
     }
 
