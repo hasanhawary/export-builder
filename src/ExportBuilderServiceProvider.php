@@ -6,6 +6,7 @@ use HasanHawary\ExportBuilder\Services\ExportService;
 use HasanHawary\ExportBuilder\Services\ExportFileService;
 use HasanHawary\ExportBuilder\Services\ExportPermissionResolver;
 use HasanHawary\ExportBuilder\Support\ExportRoutes;
+use HasanHawary\ExportBuilder\Support\PermissionManagerOperations;
 use Illuminate\Support\ServiceProvider;
 
 class ExportBuilderServiceProvider extends ServiceProvider
@@ -40,6 +41,9 @@ class ExportBuilderServiceProvider extends ServiceProvider
         ], 'export-builder-lang');
 
         $this->loadMigrationsFrom(__DIR__ . '/../database/migrations');
+
+        // Make the export-file permissions known to hasanhawary/permission-manager (if installed).
+        $this->app->make(PermissionManagerOperations::class)->register();
 
         $this->app->booted(function (): void {
             $this->app->make(ExportRoutes::class)->register();

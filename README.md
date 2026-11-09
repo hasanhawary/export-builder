@@ -619,18 +619,7 @@ The abilities above must exist in your project's permission table, otherwise nob
 
 **With [hasanhawary/permission-manager](https://packagist.org/packages/hasanhawary/permission-manager)**
 
-`ExportFile` lives in this package, not in `app/Models`, so it is not discovered automatically. Add it to `additional_operations` in `config/roles.php`:
-
-```php
-'additional_operations' => [
-    [
-        'name' => 'ExportFile',
-        'operations' => ['create', 'view-all', 'view-own', 'delete'],
-    ],
-],
-```
-
-This generates exactly the default abilities:
+Nothing to add: when permission-manager is installed, this package registers an `ExportFile` entry in `roles.additional_operations` automatically. `php artisan permissions:reset` then creates exactly the default abilities:
 
 ```
 create-export-file
@@ -639,7 +628,18 @@ view-own-export-file
 delete-export-file
 ```
 
-Give them to your roles in the same file:
+The operations follow `permissions.abilities`: every ability ending in `-export-file` is registered (rename `view_all` to `read-export-file` and you get `read-export-file`). Abilities without that suffix, like the default `export`, are skipped.
+
+To control it yourself, either define your own `ExportFile` entry in `config/roles.php` (yours always wins, the package will not add a second one), or turn the automatic registration off:
+
+```php
+// config/export.php
+'permissions' => ['register' => false, /* ... */],
+```
+
+Optional: name the group in your role translations (`lang/{locale}/roles.php`), e.g. `'export_file' => 'Export Files'`.
+
+Give them to your roles in `config/roles.php`:
 
 ```php
 'roles' => [

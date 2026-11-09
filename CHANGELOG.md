@@ -14,7 +14,7 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) — [Semantic V
 - Permissions that are not created yet (spatie `PermissionDoesNotExist`) now return `403` instead of a `500` error.
 
 ### Added
-- README: how to register the export permissions with `hasanhawary/permission-manager` (`additional_operations` in `config/roles.php`).
+- Export permissions are registered with `hasanhawary/permission-manager` automatically (an `ExportFile` entry in `roles.additional_operations`, built from the `*-export-file` abilities). A project's own `ExportFile` entry wins; turn it off with `export.module.permissions.register => false`.
 - Export history filters: `type` / `exportable_type`, `status`, `format`, `created_by`, `start` / `end` date range. Multiple values accepted as a comma-separated list or an array.
 
 ---

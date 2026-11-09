@@ -107,6 +107,11 @@ return [
 
         'permissions' => [
             'enabled' => false,
+
+            // Add the "*-export-file" abilities to hasanhawary/permission-manager automatically
+            // (ExportFile entry in roles.additional_operations). Ignored if that package is not installed.
+            'register' => true,
+
             'abilities' => [
                 'export' => 'export',
                 'queue' => 'create-export-file',
