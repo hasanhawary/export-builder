@@ -37,6 +37,20 @@ return [
 
     /*
     |--------------------------------------------------------------------------
+    | Languages
+    |--------------------------------------------------------------------------
+    |
+    | 'locales': languages a request may ask for with ?lang= (anything else → 422).
+    | Without 'lang' the file uses the current app locale. Queued exports keep the
+    | requester's language. 'rtl_locales' are laid out right-to-left (PDF + Excel sheet).
+    |
+    */
+    'locales' => ['ar', 'en'],
+
+    'rtl_locales' => ['ar', 'fa', 'he', 'ur'],
+
+    /*
+    |--------------------------------------------------------------------------
     | PDF Settings
     |--------------------------------------------------------------------------
     |
@@ -47,11 +61,30 @@ return [
     |
     */
     'pdf' => [
-        'settings' => [
-            // 'logo_url' => null,
-            // 'company_name' => null,
+        // Your project's identity on every PDF.
+        'brand' => [
+            // One name, or one per language so each file stays in its own language:
+            // 'name' => ['ar' => 'شركة المياه الوطنية', 'en' => 'National Water Company'],
+            'name' => env('EXPORT_BRAND_NAME'),
+            // URL, absolute path, or a path inside public/ (e.g. 'images/logo.png').
+            'logo' => env('EXPORT_BRAND_LOGO'),
+            'primary_color' => env('EXPORT_BRAND_COLOR', '#1e3a5f'),
+            // Any mPDF font (dejavusanscondensed covers Arabic and Latin).
+            'font' => env('EXPORT_PDF_FONT', 'dejavusanscondensed'),
         ],
 
+        // auto: landscape from 'landscape_from_columns' columns; or 'portrait' / 'landscape'.
+        'orientation' => env('EXPORT_PDF_ORIENTATION', 'auto'),
+        'landscape_from_columns' => 8,
+
+        // Extra mPDF options, merged last (e.g. ['margin_top' => 20]).
+        'mpdf' => [],
+
+        // Legacy keys still honoured and override 'brand': company_name, logo_url, primary_color.
+        'settings' => [],
+
+        // Per-tenant branding: a Closure, invokable class or [Class, 'method'] returning
+        // settings (company_name, logo_url, primary_color, font), merged over 'settings'.
         'settings_resolver' => null,
     ],
 
@@ -104,6 +137,8 @@ return [
             'name' => env('EXPORT_QUEUE'),
             'timeout' => env('EXPORT_QUEUE_TIMEOUT'),   // seconds
             'tries' => env('EXPORT_QUEUE_TRIES'),
+            // Build the file logged in as the user who asked for it (row scoping by auth()->user() keeps working).
+            'run_as_requester' => true,
         ],
 
         // Trash: deleted exports keep their file until restored or force-deleted.

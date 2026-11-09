@@ -1,455 +1,213 @@
-<!DOCTYPE html>
-<html lang="{{ app()->getLocale() }}" dir="{{ app()->getLocale() === 'ar' ? 'rtl' : 'ltr' }}">
-<head>
-    <meta charset="UTF-8">
-    <title>{{ $title ?? __("{$trans_prefix}.export_report") }}</title>
-
-    <style>
-        @page {
-            margin: 18px 22px 42px 22px;
-        }
-
-        * {
-            box-sizing: border-box;
-        }
-
-        body {
-            font-family: Arial, Helvetica, sans-serif;
-            font-size: 10px;
-            color: #222222;
-            margin: 0;
-            padding: 0;
-            line-height: 1.45;
-            background: #ffffff;
-        }
-
-        table {
-            width: 100%;
-            border-collapse: collapse;
-            border-spacing: 0;
-        }
-
-        .text-right {
-            text-align: {{ app()->getLocale() === 'ar' ? 'left' : 'right' }};
-        }
-
-        .text-left {
-            text-align: {{ app()->getLocale() === 'ar' ? 'right' : 'left' }};
-        }
-
-        /* ================= HEADER ================= */
-
-        .report-header {
-            background-color: #1a1a2e;
-            color: #ffffff;
-            margin-bottom: 10px;
-        }
-
-        .report-header td {
-            padding: 16px 20px;
-        }
-
-        .header-title {
-            font-size: 19px;
-            font-weight: bold;
-            color: #ffffff;
-            letter-spacing: 0.5px;
-            margin: 0;
-        }
-
-        .header-date {
-            font-size: 9px;
-            color: #90cdf4;
-            margin-top: 4px;
-        }
-
-        .company-name {
-            font-size: 8.5px;
-            color: #a0aec0;
-            text-transform: uppercase;
-            letter-spacing: 0.4px;
-        }
-
-        .header-line {
-            height: 1px;
-            background-color: #34344f;
-            margin: 11px 0 8px 0;
-        }
-
-        .header-meta td {
-            padding: 0;
-            font-size: 8.5px;
-            color: #a0aec0;
-        }
-
-        /* ================= DATE RANGE ================= */
-
-        .date-range {
-            margin-bottom: 10px;
-        }
-
-        .date-range td {
-            background-color: #eef2ff;
-            border-left: 4px solid #4f46e5;
-            padding: 8px 12px;
-            font-size: 9px;
-            color: #3730a3;
-        }
-
-        html[dir="rtl"] .date-range td {
-            border-left: none;
-            border-right: 4px solid #4f46e5;
-        }
-
-        /* ================= SUMMARY ================= */
-
-        .summary-table {
-            margin-bottom: 12px;
-            border: 1px solid #e2e8f0;
-            table-layout: fixed;
-        }
-
-        .summary-table td {
-            width: 25%;
-            padding: 9px 10px;
-            text-align: center;
-            background-color: #f8fafc;
-            border-right: 1px solid #e2e8f0;
-            vertical-align: middle;
-        }
-
-        html[dir="rtl"] .summary-table td {
-            border-right: none;
-            border-left: 1px solid #e2e8f0;
-        }
-
-        .summary-table td:last-child {
-            border-right: none;
-        }
-
-        html[dir="rtl"] .summary-table td:last-child {
-            border-left: none;
-        }
-
-        .summary-label {
-            font-size: 7.5px;
-            color: #64748b;
-            text-transform: uppercase;
-            letter-spacing: 0.4px;
-            font-weight: bold;
-        }
-
-        .summary-value {
-            font-size: 15px;
-            font-weight: bold;
-            color: #1a1a2e;
-            margin-top: 2px;
-        }
-
-        .summary-value.small {
-            font-size: 10px;
-        }
-
-        /* ================= DATA TABLE ================= */
-
-        .data-table {
-            width: 100%;
-            font-size: 9.5px;
-            table-layout: fixed;
-            border: 1px solid #e5e7eb;
-        }
-
-        .data-table thead {
-            display: table-header-group;
-        }
-
-        .data-table th {
-            background-color: #1a1a2e;
-            color: #ffffff;
-            padding: 8px 9px;
-            text-align: {{ app()->getLocale() === 'ar' ? 'right' : 'left' }};
-            font-size: 8.5px;
-            font-weight: bold;
-            text-transform: uppercase;
-            border-right: 1px solid #2d2d4e;
-            vertical-align: middle;
-            word-wrap: break-word;
-        }
-
-        html[dir="rtl"] .data-table th {
-            border-right: none;
-            border-left: 1px solid #2d2d4e;
-        }
-
-        .data-table th:last-child {
-            border-right: none;
-        }
-
-        html[dir="rtl"] .data-table th:last-child {
-            border-left: none;
-        }
-
-        .data-table td {
-            padding: 7px 9px;
-            border-bottom: 1px solid #e5e7eb;
-            border-right: 1px solid #f3f4f6;
-            color: #374151;
-            vertical-align: top;
-            word-wrap: break-word;
-            overflow-wrap: break-word;
-        }
-
-        html[dir="rtl"] .data-table td {
-            border-right: none;
-            border-left: 1px solid #f3f4f6;
-        }
-
-        .data-table td:last-child {
-            border-right: none;
-        }
-
-        html[dir="rtl"] .data-table td:last-child {
-            border-left: none;
-        }
-
-        .data-table tbody tr:nth-child(even) td {
-            background-color: #f9fafb;
-        }
-
-        .data-table tbody tr:last-child td {
-            border-bottom: 2px solid #1a1a2e;
-        }
-
-        .empty-cell {
-            text-align: center;
-            padding: 30px;
-            color: #94a3b8;
-            font-size: 11px;
-        }
-
-        /* ================= FOOTER ================= */
-
-        .footer {
-            position: fixed;
-            bottom: -28px;
-            left: 0;
-            right: 0;
-            height: 28px;
-            background-color: #f8fafc;
-            border-top: 2px solid #1a1a2e;
-            font-size: 8px;
-            color: #64748b;
-        }
-
-        .footer td {
-            padding: 7px 0;
-        }
-    </style>
-</head>
-
-<body>
-
 @php
-    $isRtl = app()->getLocale() === 'ar';
+    /*
+     * Default export PDF (mPDF). Publish to customise: php artisan vendor:publish --tag=export-builder-views
+     *
+     * Variables: $title, $columns, $rows, $settings, $trans_prefix, $start, $end,
+     *            $locale, $is_rtl, $generated_at (Carbon), $generated_by (?string),
+     *            $brand [name (in this file's language, or null), logo, primary_color, font]
+     *
+     * Every visible text comes from the translation file in the file's language;
+     * numbers and dates are wrapped in <bdo dir="ltr"> so they never reverse in RTL.
+     */
+    $locale      = $locale ?? app()->getLocale();
+    $isRtl       = $is_rtl ?? in_array(substr($locale, 0, 2), ['ar', 'fa', 'he', 'ur'], true);
+    $dir         = $isRtl ? 'rtl' : 'ltr';
+    $start_align = $isRtl ? 'right' : 'left';
+    $end_align   = $isRtl ? 'left' : 'right';
 
-    $safeTitle = $title ?? __("{$trans_prefix}.export_report");
+    // Package strings: the configured file first, then the package's own (never a raw key).
+    $t = function (string $key) use ($trans_prefix) {
+        $line = __("{$trans_prefix}.{$key}");
 
-    $totalRows = is_countable($rows ?? []) ? count($rows) : 0;
-    $totalColumns = is_countable($columns ?? []) ? count($columns) : 0;
+        return is_string($line) && $line !== "{$trans_prefix}.{$key}" ? $line : __("export::export.{$key}");
+    };
 
-    $getColumnLabel = function ($column, $index) {
+    $brand       = is_array($brand ?? null) ? $brand : [];
+    $primary     = $brand['primary_color'] ?? '#1e3a5f';
+    $company     = $brand['name'] ?? null;
+    $logo        = $brand['logo'] ?? null;
+    $font        = $brand['font'] ?? 'dejavusanscondensed';
+    $safeTitle   = $title ?? $t('export_report');
+
+    $generatedAt = ($generated_at ?? now())->copy()->locale($locale);
+    $rows        = $rows ?? [];
+    $columns     = $columns ?? [];
+    $totalRows   = is_countable($rows) ? count($rows) : 0;
+    $totalCols   = max(is_countable($columns) ? count($columns) : 0, 1);
+
+    $label = function ($column, $index) {
         if (is_array($column)) {
-            return $column['label']
-                ?? $column['name']
-                ?? $column['title']
-                ?? $column['key']
-                ?? ('Column ' . ($index + 1));
+            return $column['label'] ?? $column['name'] ?? $column['title'] ?? $column['key'] ?? ('#' . ($index + 1));
         }
 
         return (string) $column;
     };
 
-    $getColumnKey = function ($column, $index) {
-        if (is_array($column)) {
-            return $column['key']
-                ?? $column['name']
-                ?? $column['field']
-                ?? $column['attribute']
-                ?? $index;
-        }
-
-        return $column;
-    };
-
-    $getCellValue = function ($row, $column, $index) use ($getColumnKey) {
-        $key = $getColumnKey($column, $index);
+    $cell = function ($row, $column, $index) {
+        $key = is_array($column) ? ($column['key'] ?? $column['name'] ?? $column['field'] ?? $index) : $index;
 
         if (is_array($row)) {
             return $row[$key] ?? $row[$index] ?? '';
         }
 
-        if (is_object($row)) {
-            return data_get($row, $key, '');
+        return is_object($row) ? data_get($row, $key, '') : '';
+    };
+
+    // Numbers, dates and codes stay left-to-right inside Arabic text (never "09-11-2026").
+    $ltr = fn ($value) => '<bdo dir="ltr">' . e((string) $value) . '</bdo>';
+    $isNumeric = fn ($value) => is_int($value) || is_float($value) || (is_string($value) && preg_match('/^-?[\d,]+(\.\d+)?$/', trim($value)));
+@endphp
+<!DOCTYPE html>
+<html lang="{{ $locale }}" dir="{{ $dir }}">
+<head>
+    <meta charset="UTF-8">
+    <title>{{ $safeTitle }}</title>
+    <style>
+        @page {
+            margin: 14mm 10mm 16mm 10mm;
+            footer: html_exportFooter;
         }
 
-        return '';
-    };
-@endphp
+        body {
+            font-family: {{ $font }}, sans-serif;
+            font-size: 9pt;
+            color: #1f2937;
+            direction: {{ $dir }};
+        }
 
-{{-- ================= HEADER ================= --}}
-<table class="report-header" cellpadding="0" cellspacing="0">
-    <tr>
-        <td>
-            <table cellpadding="0" cellspacing="0">
-                <tr>
-                    <td style="width: 45%; vertical-align: middle; padding: 0;">
-                        @if($settings['logo_url'] ?? null)
-                            <img src="{{ $settings['logo_url'] }}"
-                                 style="max-height: 34px; max-width: 150px; margin-bottom: 5px;" alt="">
-                            <br>
-                        @endif
+        table { border-collapse: collapse; width: 100%; }
 
-                        @if($settings['company_name'] ?? null)
-                            <span class="company-name">
-                                {{ $settings['company_name'] }}
-                            </span>
-                        @endif
-                    </td>
+        .header td { vertical-align: middle; }
+        .company { font-size: 9pt; color: #6b7280; }
+        .title { font-size: 17pt; font-weight: bold; color: {{ $primary }}; }
+        .subtitle { font-size: 8.5pt; color: #6b7280; padding-top: 2px; }
+        .rule td { height: 3px; background-color: {{ $primary }}; padding: 0; }
 
-                    <td class="text-right" style="width: 55%; vertical-align: middle; padding: 0;">
-                        <div class="header-title">
-                            {{ $safeTitle }}
-                        </div>
-                        <div class="header-date">
-                            {{ now()->format('l, F j, Y') }}
-                        </div>
-                    </td>
-                </tr>
-            </table>
+        .info { margin-top: 8px; margin-bottom: 10px; }
+        .info td {
+            background-color: #f3f6fa;
+            border: 1px solid #e3e8ef;
+            padding: 6px 9px;
+            vertical-align: top;
+        }
+        .info-label { font-size: 7.5pt; color: #6b7280; }
+        .info-value { font-size: 10pt; font-weight: bold; color: #111827; padding-top: 1px; }
 
-            <div class="header-line"></div>
+        .data th {
+            background-color: {{ $primary }};
+            color: #ffffff;
+            font-size: 8pt;
+            font-weight: bold;
+            padding: 6px 7px;
+            text-align: {{ $start_align }};
+            border: 1px solid {{ $primary }};
+            vertical-align: middle;
+        }
+        .data td {
+            padding: 5px 7px;
+            border-bottom: 1px solid #e5e7eb;
+            text-align: {{ $start_align }};
+            vertical-align: top;
+        }
+        .data tr.even td { background-color: #f8fafc; }
+        .data td.num { text-align: {{ $end_align }}; }
+        .empty { text-align: center; color: #9ca3af; padding: 24px; font-size: 10pt; }
 
-            <table class="header-meta" cellpadding="0" cellspacing="0">
-                <tr>
-                    <td class="text-left">
-                        {{ __("{$trans_prefix}.generated_at") }}:
-                        {{ now()->format('Y-m-d H:i:s') }}
-                    </td>
+        .footer td { font-size: 7.5pt; color: #6b7280; border-top: 1px solid #e5e7eb; padding-top: 4px; }
+    </style>
+</head>
+<body dir="{{ $dir }}">
 
-                    <td class="text-right">
-                        {{ $totalRows }} {{ __("{$trans_prefix}.records") }}
-                        &nbsp;|&nbsp;
-                        {{ $totalColumns }} {{ __("{$trans_prefix}.columns") }}
-                    </td>
-                </tr>
-            </table>
-        </td>
-    </tr>
-</table>
-
-{{-- ================= DATE RANGE ================= --}}
-@if(($start ?? null) || ($end ?? null))
-    <table class="date-range" cellpadding="0" cellspacing="0">
+<htmlpagefooter name="exportFooter">
+    <table class="footer" dir="{{ $dir }}">
         <tr>
-            <td>
-                <strong>{{ __("{$trans_prefix}.date_range") }}:</strong>&nbsp;
-
-                @if(($start ?? null) && ($end ?? null))
-                    {{ $start->format('Y-m-d') }} &nbsp;→&nbsp; {{ $end->format('Y-m-d') }}
-                @elseif($start ?? null)
-                    {{ __("{$trans_prefix}.from") }} {{ $start->format('Y-m-d') }}
-                @elseif($end ?? null)
-                    {{ __("{$trans_prefix}.to") }} {{ $end->format('Y-m-d') }}
-                @endif
-            </td>
+            <td style="text-align: {{ $start_align }}; width: 40%;">{{ $company }}</td>
+            <td style="text-align: center; width: 20%;">{{ $t('page') }} {PAGENO} {{ $t('of') }} {nbpg}</td>
+            <td style="text-align: {{ $end_align }}; width: 40%;">{{ $t('generated_at') }}: {!! $ltr($generatedAt->format('Y-m-d H:i')) !!}</td>
         </tr>
     </table>
-@endif
+</htmlpagefooter>
 
-{{-- ================= SUMMARY ================= --}}
-<table class="summary-table" cellpadding="0" cellspacing="0">
+{{-- Header --}}
+<table class="header" dir="{{ $dir }}">
     <tr>
-        <td>
-            <div class="summary-label">
-                {{ __("{$trans_prefix}.total_records") }}
-            </div>
-            <div class="summary-value">
-                {{ $totalRows }}
-            </div>
+        <td style="text-align: {{ $start_align }}; width: 65%;">
+            <div class="title">{{ $safeTitle }}</div>
+            <div class="subtitle">{{ $generatedAt->translatedFormat('l j F Y') }}</div>
         </td>
-
-        <td>
-            <div class="summary-label">
-                {{ __("{$trans_prefix}.columns") }}
-            </div>
-            <div class="summary-value">
-                {{ $totalColumns }}
-            </div>
-        </td>
-
-        <td>
-            <div class="summary-label">
-                {{ __("{$trans_prefix}.format") }}
-            </div>
-            <div class="summary-value small">
-                PDF
-            </div>
-        </td>
-
-        <td>
-            <div class="summary-label">
-                {{ __("{$trans_prefix}.date") }}
-            </div>
-            <div class="summary-value small">
-                {{ now()->format('Y-m-d') }}
-            </div>
+        <td style="text-align: {{ $end_align }}; width: 35%;">
+            @if($logo)
+                <img src="{{ $logo }}" style="max-height: 14mm; max-width: 45mm;" alt=""><br>
+            @endif
+            @if($company)
+                <span class="company">{{ $company }}</span>
+            @endif
         </td>
     </tr>
 </table>
+<table class="rule"><tr><td></td></tr></table>
 
-{{-- ================= DATA TABLE ================= --}}
-<table class="data-table" cellpadding="0" cellspacing="0">
+{{-- Summary --}}
+<table class="info" dir="{{ $dir }}">
+    <tr>
+        <td>
+            <div class="info-label">{{ $t('total_records') }}</div>
+            <div class="info-value">{!! $ltr(number_format($totalRows)) !!}</div>
+        </td>
+        @if(($start ?? null) || ($end ?? null))
+            <td>
+                <div class="info-label">{{ $t('date_range') }}</div>
+                <div class="info-value">
+                    @if(($start ?? null) && ($end ?? null))
+                        {{ $t('from') }} {!! $ltr($start->format('Y-m-d')) !!} {{ $t('to') }} {!! $ltr($end->format('Y-m-d')) !!}
+                    @elseif($start ?? null)
+                        {{ $t('from') }} {!! $ltr($start->format('Y-m-d')) !!}
+                    @else
+                        {{ $t('to') }} {!! $ltr($end->format('Y-m-d')) !!}
+                    @endif
+                </div>
+            </td>
+        @endif
+        <td>
+            <div class="info-label">{{ $t('generated_at') }}</div>
+            <div class="info-value">{!! $ltr($generatedAt->format('Y-m-d H:i')) !!}</div>
+        </td>
+        @if(! empty($generated_by))
+            <td>
+                <div class="info-label">{{ $t('generated_by') }}</div>
+                <div class="info-value">{{ $generated_by }}</div>
+            </td>
+        @endif
+    </tr>
+</table>
+
+{{-- Data --}}
+<table class="data" dir="{{ $dir }}" repeat_header="1">
     <thead>
     <tr>
         @foreach($columns as $index => $column)
-            <th>
-                {{ $getColumnLabel($column, $index) }}
-            </th>
+            <th>{{ $label($column, $index) }}</th>
         @endforeach
     </tr>
     </thead>
-
     <tbody>
-    @forelse($rows as $row)
-        <tr>
+    @forelse($rows as $rowIndex => $row)
+        <tr class="{{ $rowIndex % 2 ? 'even' : '' }}">
             @foreach($columns as $index => $column)
-                <td>
-                    {{ $getCellValue($row, $column, $index) }}
-                </td>
+                @php($value = $cell($row, $column, $index))
+                @if($isNumeric($value))
+                    <td class="num">{!! $ltr($value) !!}</td>
+                @else
+                    <td>{{ $value }}</td>
+                @endif
             @endforeach
         </tr>
     @empty
         <tr>
-            <td colspan="{{ max($totalColumns, 1) }}" class="empty-cell">
-                {{ __("{$trans_prefix}.no_data") }}
-            </td>
+            <td colspan="{{ $totalCols }}" class="empty">{{ $t('no_data') }}</td>
         </tr>
     @endforelse
     </tbody>
-</table>
-
-{{-- ================= FOOTER ================= --}}
-<table class="footer" cellpadding="0" cellspacing="0">
-    <tr>
-        <td class="text-left" style="width: 50%;">
-            {{ $settings['company_name'] ?? config('app.name', 'Export Builder') }}
-        </td>
-
-        <td class="text-right" style="width: 50%;">
-            {{ __("{$trans_prefix}.generated_at") }}:
-            {{ now()->format('Y-m-d H:i:s') }}
-        </td>
-    </tr>
 </table>
 
 </body>

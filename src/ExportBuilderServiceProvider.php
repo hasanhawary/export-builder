@@ -8,6 +8,7 @@ use HasanHawary\ExportBuilder\Services\ExportPermissionResolver;
 use HasanHawary\ExportBuilder\Support\ExportRoutes;
 use HasanHawary\ExportBuilder\Support\PermissionManagerOperations;
 use HasanHawary\ExportBuilder\Listeners\MarkExportAsFailed;
+use HasanHawary\ExportBuilder\Console\CheckTranslations;
 use HasanHawary\ExportBuilder\Models\ExportFile;
 use Illuminate\Console\Scheduling\Schedule;
 use Illuminate\Queue\Events\JobFailed;
@@ -46,6 +47,10 @@ class ExportBuilderServiceProvider extends ServiceProvider
         ], 'export-builder-lang');
 
         $this->loadMigrationsFrom(__DIR__ . '/../database/migrations');
+
+        if ($this->app->runningInConsole()) {
+            $this->commands([CheckTranslations::class]);
+        }
 
         // Make the export-file permissions known to hasanhawary/permission-manager (if installed).
         $this->app->make(PermissionManagerOperations::class)->register();

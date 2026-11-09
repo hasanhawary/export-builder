@@ -12,13 +12,31 @@ class PackagePublishTest extends TestCase
         return [ExportBuilderServiceProvider::class];
     }
 
-    public function test_config_views_and_language_files_can_be_published(): void
+    /**
+     * Published files land in the shared testbench app: left behind, they would replace the
+     * package's own config / view / translations for every test that runs after this one.
+     */
+    private function removePublishedFiles(): void
     {
         @unlink(config_path('export.php'));
         @unlink(resource_path('views/vendor/export/pdf/export.blade.php'));
+        @rmdir(resource_path('views/vendor/export/pdf'));
+        @rmdir(resource_path('views/vendor/export'));
         @unlink(lang_path('en/export.php'));
         @unlink(lang_path('ar/export.php'));
         @unlink(database_path('migrations/create_export_files_table.php'));
+    }
+
+    protected function tearDown(): void
+    {
+        $this->removePublishedFiles();
+
+        parent::tearDown();
+    }
+
+    public function test_config_views_and_language_files_can_be_published(): void
+    {
+        $this->removePublishedFiles();
 
         $this->artisan('vendor:publish', [
             '--tag'   => 'export-builder-config',

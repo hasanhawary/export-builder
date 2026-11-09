@@ -2,6 +2,7 @@
 
 namespace HasanHawary\ExportBuilder\Concerns;
 
+use HasanHawary\ExportBuilder\ExportBuilder;
 use PhpOffice\PhpSpreadsheet\Style\Border;
 use PhpOffice\PhpSpreadsheet\Worksheet\Worksheet;
 
@@ -18,6 +19,9 @@ trait HasExcelStyles
     {
         $highestRow    = $sheet->getHighestRow();
         $highestColumn = $sheet->getHighestColumn();
+
+        // Arabic (and other RTL) files open as a right-to-left sheet.
+        $sheet->setRightToLeft(ExportBuilder::isRtl());
 
         if ($highestRow < 1) {
             return;

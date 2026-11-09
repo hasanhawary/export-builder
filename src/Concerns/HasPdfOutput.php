@@ -2,6 +2,7 @@
 
 namespace HasanHawary\ExportBuilder\Concerns;
 
+use HasanHawary\ExportBuilder\Support\ExportHelper;
 use Illuminate\Support\Str;
 
 /**
@@ -47,20 +48,74 @@ trait HasPdfOutput
             }
         });
 
-        $type      = class_basename(static::class);
-        $type      = Str::plural(Str::snake(Str::replaceLast('Export', '', $type)));
-
-        // Try to find a title translation for this export type.
-        // resolveTrans() uses the configured trans_file — no hardcoded namespace.
-        $titleFromTrans = $this->resolveTrans("{$type}_title");
-        $title = ($titleFromTrans !== "{$type}_title")
-            ? $titleFromTrans
-            : Str::title(str_replace('_', ' ', $type));
-
         return [
-            'title'   => $title,
+            'title'   => $this->pdfTitle(),
             'columns' => array_map(fn ($h) => ['label' => $h, 'width' => 'auto'], $this->headings()),
             'rows'    => $rows,
         ];
+    }
+
+    /**
+     * The PDF title, always in the file's language:
+     *  1. the name the user gave the export ('filename')
+     *  2. a "{type}_title" translation (e.g. users_title), then a "{type}" translation (users)
+     *  3. English only: the name derived from the class (UserExport → "Users")
+     *  4. otherwise the translated generic "Export Report" — never English text in another language
+     */
+    /**
+     * Translation keys tried for the title, in order (also used by `php artisan export:translations`):
+     * "{type}_title", "{type}" (UserExport → users) and "pages.{page}" (page = user).
+     *
+     * @return list<string>
+     */
+    public function titleTranslationKeys(): array
+    {
+        $base = Str::snake(Str::replaceLast('Export', '', class_basename(static::class)));
+        $type = Str::plural($base);
+        $page = (string) ($this->filter['page'] ?? $base);
+
+        return array_values(array_unique(["{$type}_title", $type, "pages.{$page}"]));
+    }
+
+    /**
+     * The first title translation found in the configured file, then the package's 'export' file.
+     */
+    public function translatedTitle(?string $file = null, ?string $locale = null): ?string
+    {
+        $file ??= (string) config('export.trans_file', 'export');
+
+        foreach (array_unique([$file, 'export']) as $source) {
+            foreach ($this->titleTranslationKeys() as $key) {
+                if (($translated = ExportHelper::lookup($key, $source, $locale)) !== null) {
+                    return $translated;
+                }
+            }
+        }
+
+        return null;
+    }
+
+    protected function pdfTitle(): string
+    {
+        $filename = trim((string) ($this->filter['filename'] ?? ''));
+
+        if ($filename !== '') {
+            return $filename;
+        }
+
+        $type = Str::plural(Str::snake(Str::replaceLast('Export', '', class_basename(static::class))));
+        $file = (string) config('export.trans_file', 'export');
+
+        if (($translated = $this->translatedTitle($file)) !== null) {
+            return $translated;
+        }
+
+        if (str_starts_with(strtolower(app()->getLocale()), 'en')) {
+            return Str::title(str_replace('_', ' ', $type));
+        }
+
+        return ExportHelper::lookup('export_report', $file)
+            ?? ExportHelper::lookup('export_report', 'export')
+            ?? Str::title(str_replace('_', ' ', $type));
     }
 }

@@ -5,6 +5,7 @@ namespace HasanHawary\ExportBuilder;
 use HasanHawary\ExportBuilder\Contracts\BaseExportContract;
 use HasanHawary\ExportBuilder\Renderers\ExcelRenderer;
 use HasanHawary\ExportBuilder\Renderers\PdfRenderer;
+use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Str;
 use RuntimeException;
@@ -45,8 +46,82 @@ class ExportBuilder
 
     /**
      * Resolve the export class, instantiate it, and return a binary file download response.
+     *
+     * The whole file (headings, yes/no values, dates, PDF direction) is built in the requested
+     * 'lang' when it is supported, else in the current app locale. The app locale is restored after.
      */
     public function response(): BinaryFileResponse
+    {
+        $locale = self::normalizeLocale($this->filter['lang'] ?? null) ?? app()->getLocale();
+
+        $previousApp    = app()->getLocale();
+        $previousCarbon = Carbon::getLocale();
+
+        app()->setLocale($locale);
+        Carbon::setLocale($locale);
+
+        try {
+            return $this->render();
+        } finally {
+            app()->setLocale($previousApp);
+            Carbon::setLocale($previousCarbon);
+        }
+    }
+
+    /**
+     * Locales a request may ask for with 'lang' (config 'export.locales').
+     *
+     * @return list<string>
+     */
+    public static function supportedLocales(): array
+    {
+        $locales = array_map(
+            fn ($locale) => strtolower(str_replace('_', '-', trim((string) $locale))),
+            (array) (config('export.locales') ?: ['en', 'ar'])
+        );
+
+        return array_values(array_unique(array_filter($locales)));
+    }
+
+    /**
+     * A supported locale for a requested 'lang', or null.
+     * Case and separators are ignored ('AR', 'ar_EG', 'ar-eg'); a regional variant falls back
+     * to its language ('ar-EG' → 'ar') when only the language is supported.
+     */
+    public static function normalizeLocale(mixed $lang): ?string
+    {
+        if (! is_string($lang)) {
+            return null;
+        }
+
+        $locale = strtolower(str_replace('_', '-', trim($lang)));
+
+        if ($locale === '' || ! preg_match('/^[a-z]{2,3}(-[a-z0-9]{1,8}){0,6}$/', $locale)) {
+            return null;
+        }
+
+        $supported = self::supportedLocales();
+
+        if (in_array($locale, $supported, true)) {
+            return $locale;
+        }
+
+        $language = explode('-', $locale)[0];
+
+        return in_array($language, $supported, true) ? $language : null;
+    }
+
+    /**
+     * Whether a locale is written right-to-left (config 'export.rtl_locales').
+     */
+    public static function isRtl(?string $locale = null): bool
+    {
+        $language = explode('-', strtolower(str_replace('_', '-', (string) ($locale ?? app()->getLocale()))))[0];
+
+        return in_array($language, (array) config('export.rtl_locales', ['ar', 'fa', 'he', 'ur']), true);
+    }
+
+    private function render(): BinaryFileResponse
     {
         $page = (string) ($this->filter['page'] ?? '');
 

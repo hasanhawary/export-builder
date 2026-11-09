@@ -83,7 +83,20 @@ class ExportFileServiceTest extends TestCase
         $filters = ['page' => 'user', 'format' => 'xlsx', 'start' => '2026-01-01'];
         $export  = $this->service->create($filters);
 
-        $this->assertSame($filters, $export->metadata['filters']);
+        // Plus the requester's language, so the worker builds the file in it.
+        $this->assertSame([...$filters, 'lang' => app()->getLocale()], $export->metadata['filters']);
+    }
+
+    public function test_create_keeps_the_requested_language_or_falls_back_to_the_request_locale(): void
+    {
+        app()->setLocale('en');
+
+        $this->assertSame('ar', $this->service->create(['page' => 'user', 'lang' => 'AR_eg'])->metadata['filters']['lang']);
+        $this->assertSame('en', $this->service->create(['page' => 'user'])->metadata['filters']['lang']);
+        $this->assertSame('en', $this->service->create(['page' => 'user', 'lang' => 'xx'])->metadata['filters']['lang']);
+
+        app()->setLocale('de'); // not a supported export locale
+        $this->assertArrayNotHasKey('lang', $this->service->create(['page' => 'user'])->metadata['filters']);
     }
 
     // =========================================================================

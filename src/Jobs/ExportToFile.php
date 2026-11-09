@@ -10,6 +10,7 @@ use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Bus\Dispatchable;
 use Illuminate\Queue\InteractsWithQueue;
 use Illuminate\Queue\SerializesModels;
+use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Storage;
 use RuntimeException;
@@ -56,6 +57,7 @@ class ExportToFile implements ShouldQueue
         }
 
         $sourcePath = null;
+        $actingAs   = $this->actAsRequester($export);
 
         try {
             $service->markAsProcessing($export);
@@ -90,6 +92,42 @@ class ExportToFile implements ShouldQueue
             if ($sourcePath && is_file($sourcePath)) {
                 @unlink($sourcePath);
             }
+
+            if ($actingAs) {
+                Auth::forgetUser();
+            }
+        }
+    }
+
+    /**
+     * Build the file as the user who asked for it, so export classes that scope rows by
+     * auth()->user() work the same in the worker as in the request. Skipped when a user is
+     * already set (e.g. by a subclass) or when 'export.module.queue.run_as_requester' is false.
+     */
+    private function actAsRequester(ExportFile $export): bool
+    {
+        if (! config('export.module.queue.run_as_requester', true) || ! $export->created_by) {
+            return false;
+        }
+
+        try {
+            $guard = Auth::guard();
+
+            if ($guard->check() || ! method_exists($guard, 'getProvider') || ! $guard->getProvider()) {
+                return false;
+            }
+
+            $user = $guard->getProvider()->retrieveById($export->created_by);
+
+            if (! $user) {
+                return false;
+            }
+
+            $guard->setUser($user);
+
+            return true;
+        } catch (Throwable) {
+            return false;
         }
     }
 }

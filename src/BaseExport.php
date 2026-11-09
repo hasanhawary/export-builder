@@ -184,6 +184,48 @@ abstract class BaseExport implements BaseExportContract, FromCollection, WithMap
     // Excel: headings()  — column header row
     // -------------------------------------------------------------------------
 
+    /**
+     * The untranslated heading keys, in column order (used by `php artisan export:translations`).
+     *
+     * @return list<string>
+     */
+    public function headingKeys(): array
+    {
+        $keys = $this->baseHeadingKeys();
+
+        if (! empty($this->customRelations())) {
+            $keys = array_merge(
+                array_values(array_filter($keys, fn ($key) => ! str_ends_with((string) $key, '_id'))),
+                $this->headingRelationKeys()
+            );
+        }
+
+        return array_values(array_map('strval', $keys));
+    }
+
+    private function baseHeadingKeys(): array
+    {
+        $columns         = $this->applyColumnFilter($this->columns);
+        $oneRelations    = $this->applyColumnFilter($this->relations['one']);
+        $concatRelations = $this->applyColumnFilter($this->relations['many']['concat']);
+        $listRelations   = $this->applyColumnFilter($this->relations['many']['list'], 'many');
+        $countRelations  = $this->applyColumnFilter($this->relations['many']['count'], 'many');
+        $additional      = $this->applyColumnFilter($this->additionalQuery, 'many');
+
+        return array_merge(
+            array_keys($columns),
+            array_keys($this->mergeKeyedArrays($oneRelations)),
+            array_keys($this->relations['morph']),
+            array_keys($concatRelations),
+            array_keys($listRelations),
+            array_map(
+                fn ($name) => str_contains($name, ' as ') ? explode(' as ', $name)[1] : $name,
+                $countRelations
+            ),
+            array_keys($additional)
+        );
+    }
+
     public function headings(): array
     {
         // Work on local copies — never mutate instance state.

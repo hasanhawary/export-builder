@@ -24,6 +24,8 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) — [Semantic V
 - Security: advanced filters accepted hidden model columns (`password`, `remember_token`), which allowed guessing their values. Hidden attributes are no longer filterable.
 - PDF data is loaded in chunks keeping only row values (custom ordering kept), instead of every model and relation at once.
 - Translation lookup is shared by `ExportHelper::resolveTrans()` and export headings (`ExportHelper::lookup()`).
+- **Host helpers replaced (regression since 2.4.4)**: `wrapPaginate()` / `successResponse()` were loaded through composer "files", i.e. before the app's own helpers, so they replaced the app's versions in every listing of the app. They are now fallbacks loaded by the service provider only when the app does not define them; the export history builds its own 2.4.3-shaped response (`data` / `links` / `meta`).
+- Boolean cells showed `export.yes` / `export.no` unless the app had published the translation files.
 - `ExportBuilder` closed output buffers it did not own (`ob_end_clean()` + `ob_start()`); it now only clears the current buffer's content.
 - Security: two queued exports of the same page in the same minute wrote to the same file, so one user could download another user's export.
 - Security: `page` could instantiate any class in the export namespace ending in `Export`; it must now implement `BaseExportContract`.
@@ -36,6 +38,11 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) — [Semantic V
 - Permissions that are not created yet (spatie `PermissionDoesNotExist`) now return `403` instead of a `500` error.
 
 ### Added
+- **File language**: `lang` on export requests (validated against `export.locales`; `AR`, `ar_EG`, `ar-eg` → `ar`; anything else `422`). The whole file is built in it, the app locale is restored after. Queued exports keep the requester's language. RTL locales get a right-to-left PDF and Excel sheet.
+- **Redesigned PDF**: one language per file (titles, dates, labels; never package English in an Arabic file or the reverse), numbers and dates kept left-to-right inside Arabic, page numbers, repeated table header, automatic landscape for wide tables.
+- **Branding per project**: `export.pdf.brand` (name — per language —, logo, primary color, font) from `.env` / config, overridable per tenant through `settings_resolver`; unsafe values ignored.
+- `php artisan export:translations`: lists headings and titles missing a translation per locale, exits 1 when something is missing.
+- Queued jobs run logged in as the requester (`module.queue.run_as_requester`), so exports scoped by `auth()->user()` behave like in the request.
 - Failed queue jobs (timeout, killed worker, tries exhausted) mark their export `failed` through a `JobFailed` listener; exports no longer stay `processing` forever. Job errors are logged.
 - `module.queue.timeout` / `tries` (`EXPORT_QUEUE_TIMEOUT`, `EXPORT_QUEUE_TRIES`); a subclass's own `$timeout` / `$tries` still win.
 - Trash pruning: `module.trash.prune_after_days` (`EXPORT_TRASH_DAYS`) deletes old trashed exports and their files via `model:prune`, scheduled daily by the package. Off by default.

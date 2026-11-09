@@ -3,6 +3,7 @@
 namespace HasanHawary\ExportBuilder\Services;
 
 use HasanHawary\ExportBuilder\Enums\ExportStatus;
+use HasanHawary\ExportBuilder\ExportBuilder;
 use HasanHawary\ExportBuilder\Models\ExportFile;
 use Illuminate\Support\Facades\Storage;
 
@@ -10,6 +11,17 @@ class ExportFileService
 {
     public function create(array $filters): ExportFile
     {
+        // Queued exports run later, in a worker: keep the requester's language with the export
+        // (the 'lang' they asked for, else the locale of this request) so the file matches it.
+        $lang = ExportBuilder::normalizeLocale($filters['lang'] ?? null)
+            ?? ExportBuilder::normalizeLocale(app()->getLocale());
+
+        unset($filters['lang']);
+
+        if ($lang !== null) {
+            $filters['lang'] = $lang;
+        }
+
         return ExportFile::create([
             'exportable_type' => $filters['page'],
             'format'          => $filters['format'] ?? 'xlsx',

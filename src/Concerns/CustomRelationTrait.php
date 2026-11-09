@@ -41,6 +41,16 @@ trait CustomRelationTrait
 
     public function headingRelations(): array
     {
+        return array_map(fn (string $key) => $this->resolveTrans($key), $this->headingRelationKeys());
+    }
+
+    /**
+     * Untranslated heading keys of the custom relations ("{relation}_{column}").
+     *
+     * @return list<string>
+     */
+    public function headingRelationKeys(): array
+    {
         $custom = [];
         $hasFilter = ! empty($this->filter['columns']) || ! empty($this->filter['related']);
 
@@ -54,7 +64,7 @@ trait CustomRelationTrait
                     continue;
                 }
 
-                $custom[] = $this->resolveTrans($fullKey);
+                $custom[] = $fullKey;
             }
         }
 

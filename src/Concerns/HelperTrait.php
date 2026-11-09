@@ -19,9 +19,9 @@ trait HelperTrait
             'int'       => (int) $value,
             'float'     => is_numeric($value) ? (float) $value : $value,
             'money'     => is_numeric($value) ? number_format((float) $value, 2, '.', '') : $value,
-            'bool', 'boolean' => $value
-                ? __($this->transFileKey('yes'))
-                : __($this->transFileKey('no')),
+            // Same lookup as headings (package namespace first): a flat __('export.yes') only
+            // worked when the app had published the lang files, otherwise cells read "export.yes".
+            'bool', 'boolean' => $value ? $this->resolveTrans('yes') : $this->resolveTrans('no'),
             'classPath' => $this->resolveTrans(Str::afterLast((string) $value, '\\')),
             'text'      => $value,
             default     => (class_exists($type) && method_exists($type, 'resolve'))
@@ -75,15 +75,4 @@ trait HelperTrait
             ->toArray();
     }
 
-    /**
-     * Build a fully-qualified translation key using the configured trans_file.
-     * Handles both package namespace ('export' → 'export::export.yes')
-     * and flat host-app files ('api' → 'api.yes').
-     */
-    private function transFileKey(string $key): string
-    {
-        $transFile = config('export.trans_file', 'export');
-
-        return "{$transFile}.{$key}";
-    }
 }

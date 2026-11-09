@@ -24,6 +24,7 @@ Define one export class, get XLSX / XLS / CSV / PDF output, direct download or q
 - [Morph Relation Exports](#morph-relation-exports)
 - [Advanced Filters](#advanced-filters)
 - [Column Selection Filter](#column-selection-filter)
+- [Languages](#languages)
 - [PDF Output](#pdf-output)
 - [Queued Exports](#queued-exports)
 - [Routes](#routes)
@@ -44,7 +45,8 @@ Define one export class, get XLSX / XLS / CSV / PDF output, direct download or q
 - **Relations** — belongs-to / has-one, has-many (concat, list, count with alias), nested dot-notation, polymorphic, custom relations
 - **Filters** — date range, advanced `whereIn` / `whereHas` / morph filters (unknown keys and hidden columns like `password` ignored), enum resolvers, runtime column selection
 - **Automatic formatting** — text, int, float, money, date, datetime, bool, array, classPath, enum `resolve()`
-- **Translations** — English and Arabic built in for headings, yes/no values and statuses
+- **One language per file** — `?lang=ar|en` (validated) or the app locale; Arabic files are fully Arabic and right-to-left (PDF and Excel), English files fully English; `php artisan export:translations` finds missing headings
+- **Your brand on every PDF** — name (per language), logo, color and font from `.env` / config, or per tenant from a resolver; page numbers, repeated headers, automatic landscape
 
 **Ready-made endpoints (optional module)**
 - **Direct download** or **queued export** with an export history (list, show, download, delete)
@@ -174,6 +176,9 @@ Without permissions, anyone who passes the route middleware can export, and user
 
 ### 9. Translations (optional)
 
+The package's own texts work in Arabic and English without publishing anything. For your own columns, run `php artisan export:translations` to see which headings still need a translation (see [Languages](#languages)).
+
+
 ```bash
 php artisan vendor:publish --tag=export-builder-lang
 ```
@@ -257,9 +262,22 @@ return [
     // Translations: 'export' → package files, 'api' → your lang/{locale}/api.php
     'trans_file' => 'export',
 
+    // Languages a request may ask for with ?lang= (else 422), and right-to-left ones
+    'locales'     => ['ar', 'en'],
+    'rtl_locales' => ['ar', 'fa', 'he', 'ur'],
+
     'pdf' => [
-        'settings'          => [],      // passed to the view as $settings (logo_url, company_name, ...)
-        'settings_resolver' => null,    // Closure / invokable class / [Class, 'method'] returning an array
+        'brand' => [
+            'name'          => null,        // string or ['ar' => ..., 'en' => ...]   (.env: EXPORT_BRAND_NAME)
+            'logo'          => null,        // URL, absolute path or public/ path       (.env: EXPORT_BRAND_LOGO)
+            'primary_color' => '#1e3a5f',   //                                          (.env: EXPORT_BRAND_COLOR)
+            'font'          => 'dejavusanscondensed', //                                (.env: EXPORT_PDF_FONT)
+        ],
+        'orientation'            => 'auto', // auto | portrait | landscape            (.env: EXPORT_PDF_ORIENTATION)
+        'landscape_from_columns' => 8,
+        'mpdf'                   => [],     // extra mPDF options
+        'settings'          => [],      // legacy: company_name, logo_url, primary_color (override 'brand')
+        'settings_resolver' => null,    // per tenant: Closure / invokable class / [Class, 'method'] returning settings
     ],
 
     'module' => [
@@ -288,6 +306,7 @@ return [
             'name'       => null,       // null → default queue        (.env: EXPORT_QUEUE)
             'timeout'    => null,       // seconds                     (.env: EXPORT_QUEUE_TIMEOUT)
             'tries'      => null,       //                             (.env: EXPORT_QUEUE_TRIES)
+            'run_as_requester' => true, // the job runs logged in as the user who asked for the export
         ],
 
         'trash' => [
@@ -547,47 +566,93 @@ Or via JSON:
 
 ---
 
+## Languages
+
+Every file is built in one language: headings, yes/no values, dates, the PDF and the Excel sheet direction.
+
+- Send `lang` with any export request: `GET api/export-direct?page=user&lang=ar`, `POST api/export { "page": "user", "lang": "en" }`.
+- Allowed values come from `export.locales` (default `['ar', 'en']`). Case and region are ignored: `AR`, `ar_EG`, `ar-eg` → `ar`. Anything else answers `422`.
+- Without `lang`, the current app locale is used (whatever your middleware set, e.g. from `Accept-Language`).
+- Queued exports remember the requester's language and are built in it by the worker.
+- `export.rtl_locales` (default `ar, fa, he, ur`) get a right-to-left PDF and a right-to-left Excel sheet.
+- The app locale is restored after the export, even when it fails.
+
+**Keep each file in one language.** The package translates its own texts and common headings (`id`, `name`, `email`, `status`, ...). Your own columns need a translation in each language, otherwise the column key is shown. Check every export at once:
+
+```bash
+php artisan export:translations              # all pages, all locales
+php artisan export:translations user --locale=ar
+```
+
+It lists every heading and title missing a translation and exits with `1` when something is missing (use it in CI). Add the keys to your translation file (`export.trans_file`, e.g. `lang/ar/export.php`):
+
+```php
+return [
+    'salary'      => 'الراتب',
+    'users_title' => 'تقرير المستخدمين',   // PDF title for UserExport
+];
+```
+
+---
+
 ## PDF Output
 
-> Rows are loaded in chunks (`chunk_size`) and only their values are kept, but mPDF builds the whole document in memory. For very large datasets prefer `xlsx` / `csv`, which stream.
+The default template is `export::pdf.export`: your brand, the title, a summary (record count, date range, generated at / by), the table with a repeated header row on every page, and a footer with "Page X of Y".
 
-The default Blade view is `export::pdf.export` (the view name, not a translation key).
+- The title is the `filename` the user gave, else the `{page}_title` / `{page}` translation, else (English only) the class name, else the translated "Export Report". An Arabic file never gets an English title.
+- Dates and numbers are kept left-to-right inside Arabic text, so `2026-11-09` never shows as `09-11-2026`.
+- Landscape is used automatically from 8 columns (`export.pdf.orientation`: `auto` | `portrait` | `landscape`, `landscape_from_columns`).
+- Rows are loaded in chunks and only their values are kept, but mPDF builds the whole document in memory. For very large datasets prefer `xlsx` / `csv`, which stream.
 
-Publish to customise:
+### Your project's identity
+
+Set once per project in `.env`, no view to publish:
+
+```dotenv
+EXPORT_BRAND_NAME="National Water Company"
+EXPORT_BRAND_LOGO=images/logo.png        # URL, absolute path, or a path inside public/
+EXPORT_BRAND_COLOR=#0f5c8c
+EXPORT_PDF_FONT=dejavusanscondensed      # any mPDF font; covers Arabic and Latin
+```
+
+For a name per language, set it in `config/export.php`. The name is only shown when it exists for the file's language:
+
+```php
+'pdf' => [
+    'brand' => [
+        'name' => ['ar' => 'شركة المياه الوطنية', 'en' => 'National Water Company'],
+    ],
+],
+```
+
+**Per tenant** — return the brand from a resolver (Closure, invokable class or `[Class, 'method']`); it overrides the config:
+
+```php
+'pdf' => [
+    'settings_resolver' => [App\Services\TenantBrand::class, 'forExport'],
+],
+
+// return ['company_name' => ['ar' => '...', 'en' => '...'], 'logo_url' => '...', 'primary_color' => '#...', 'font' => '...'];
+```
+
+The older `settings` keys (`company_name`, `logo_url`) still work. Unsafe values (scripts, `javascript:` links, CSS in the color or font) are ignored.
+
+### Custom template
 
 ```bash
 php artisan vendor:publish --tag=export-builder-views
 ```
 
-Override per export class:
+Or per export class:
 
 ```php
 public function pdfView(): string
 {
     return 'exports.my-custom-template';
 }
-
-public function pdfData(): array
-{
-    return [
-        'title'   => 'Users Report',
-        'columns' => array_map(fn ($h) => ['label' => $h, 'width' => 'auto'], $this->headings()),
-        'rows'    => $this->buildQuery()->get()->map(fn ($r) => array_values($this->map($r)))->toArray(),
-    ];
-}
 ```
 
-**PDF settings resolver** — resolve dynamic settings (e.g. company logo from DB):
-
-```php
-// config/export.php
-'pdf' => [
-    'settings_resolver' => [App\Services\BrandSettings::class, 'forExport'],
-    // Also supports: invokable class string, Closure
-],
-```
-
-The resolver must return an array. Keys available in the Blade view as `$settings['logo_url']`, `$settings['company_name']`, etc.
+The view receives `$title`, `$columns`, `$rows`, `$brand`, `$locale`, `$is_rtl`, `$start`, `$end`, `$generated_at`, `$generated_by`, `$settings` and `$trans_prefix`.
 
 ---
 
