@@ -496,11 +496,20 @@ class ExportRoutesTest extends TestCase
         app(ExportRoutes::class)->register();
         Route::getRoutes()->refreshNameLookups();
 
-        $route = Route::getRoutes()->getByName('export-builder.export.logs.destroy');
+        $routes = [
+            'logs.destroy'      => ['DELETE', 'api/export-log/{exportFile}'],
+            'logs.destroy-many' => ['DELETE', 'api/export-log/delete'],
+            'logs.restore'      => ['POST', 'api/export-log/restore'],
+            'logs.force-delete' => ['DELETE', 'api/export-log/force-delete'],
+        ];
 
-        $this->assertNotNull($route);
-        $this->assertSame('api/export-log/delete', $route->uri());
-        $this->assertContains('DELETE', $route->methods());
+        foreach ($routes as $name => [$method, $uri]) {
+            $route = Route::getRoutes()->getByName("export-builder.export.{$name}");
+
+            $this->assertNotNull($route, $name);
+            $this->assertSame($uri, $route->uri(), $name);
+            $this->assertContains($method, $route->methods(), $name);
+        }
     }
 
     private function enablePackageRoutes(array $routeConfig = []): void

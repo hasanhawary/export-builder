@@ -19,6 +19,8 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) — [Semantic V
 - Config: `EXPORT_DISK`, `EXPORT_PATH`, `EXPORT_CHUNK_SIZE`, `EXPORT_PERMISSIONS`, new `module.queue` (`EXPORT_QUEUE_CONNECTION`, `EXPORT_QUEUE`).
 
 ### Fixed
+- **Upgrade from 2.4.3 broke host apps (regression in 2.4.4 / 2.4.5)**: `ExportJobController::destroy()` lost its 2.4.3 signature, so a host controller overriding `destroy(Request, int $exportFile, ...)` failed with a PHP fatal error, and `DELETE export-log/{id}` was removed. Both are back; bulk delete is now `destroyMany()` on `DELETE export-log/delete`. Public method signatures that hosts override (`index`, `show`, `download`, `destroy`, `export`, job `handle`) are unchanged from 2.4.3 and covered by a compatibility test.
+- `ExportBuilder` closed output buffers it did not own (`ob_end_clean()` + `ob_start()`); it now only clears the current buffer's content.
 - Security: two queued exports of the same page in the same minute wrote to the same file, so one user could download another user's export.
 - Security: `page` could instantiate any class in the export namespace ending in `Export`; it must now implement `BaseExportContract`.
 - `columns.*` / `related.*` must be strings (nested arrays caused a 500).

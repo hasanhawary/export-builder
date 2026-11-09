@@ -293,6 +293,19 @@ class HardeningTest extends TestCase
         $this->assertSame([], array_values(array_diff($this->tempFiles(), $before)));
     }
 
+    public function test_builder_clears_stray_output_without_closing_other_buffers(): void
+    {
+        $level = ob_get_level();
+
+        ob_start();
+        echo 'stray output';
+        new ExportBuilder(['page' => 'hardening_person']);
+        $left = ob_get_clean();
+
+        $this->assertSame('', $left);
+        $this->assertSame($level, ob_get_level());
+    }
+
     // ---------------------------------------------------------------------
     // Class resolution / validation / translations
     // ---------------------------------------------------------------------

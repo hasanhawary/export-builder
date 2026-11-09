@@ -26,12 +26,11 @@ class ExportBuilder
 
     public function __construct(public array $filter)
     {
-        // Clean output buffers to avoid Excel file corruption
-        if (function_exists('ob_end_clean')) {
-            @ob_end_clean();
-        }
-        if (function_exists('ob_start')) {
-            @ob_start();
+        // Drop stray output (whitespace, notices) that would corrupt the binary file.
+        // Only the current buffer's content is cleared: buffers owned by the framework,
+        // Octane or a test runner are never closed or added.
+        if (ob_get_level() > 0) {
+            @ob_clean();
         }
     }
 

@@ -597,14 +597,15 @@ Poll for completion:
 GET api/export-log           ← list all (paginated, ?per_page=15&status=completed)
 GET api/export-log/{id}      ← show one
 GET api/export-log/{id}/download  ← stream the file
-DELETE api/export-log/delete        ← move to the trash (file kept)
+DELETE api/export-log/{id}          ← move one export to the trash (file kept)
+DELETE api/export-log/delete        ← move several to the trash: { "ids": [1, 2] }
 POST   api/export-log/restore       ← bring back from the trash, with its file
 DELETE api/export-log/force-delete  ← delete permanently: record and file
 ```
 
 The trash is listed with `GET api/export-log?trashed=only`. Trashed exports cannot be shown or downloaded until they are restored. Force delete works on trashed and active exports.
 
-Send the ids in the request body. Each record is checked against the user's permissions; if any one is not allowed, nothing is changed and the response is `403`.
+For `delete`, `restore` and `force-delete`, send the ids in the request body. Each record is checked against the user's permissions; if any one is not allowed, nothing is changed and the response is `403`.
 
 ```json
 { "ids": [1, 2, 3] }
@@ -657,7 +658,8 @@ All package routes default to the `api` prefix. They never claim a URI already o
 | `GET` | `api/export-log` | `export-builder.export.logs.index` | List export history |
 | `GET` | `api/export-log/{id}` | `export-builder.export.logs.show` | Show one export record |
 | `GET` | `api/export-log/{id}/download` | `export-builder.export.logs.download` | Download exported file |
-| `DELETE` | `api/export-log/delete` | `export-builder.export.logs.destroy` | Move to the trash, file kept (`ids` in the body) |
+| `DELETE` | `api/export-log/{id}` | `export-builder.export.logs.destroy` | Move one export to the trash, file kept |
+| `DELETE` | `api/export-log/delete` | `export-builder.export.logs.destroy-many` | Move several to the trash (`ids` in the body) |
 | `POST` | `api/export-log/restore` | `export-builder.export.logs.restore` | Restore from the trash (`ids` in the body) |
 | `DELETE` | `api/export-log/force-delete` | `export-builder.export.logs.force-delete` | Delete permanently, record and file (`ids` in the body) |
 

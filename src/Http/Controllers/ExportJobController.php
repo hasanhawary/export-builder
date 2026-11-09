@@ -70,19 +70,43 @@ class ExportJobController extends Controller
         return response()->json(['data' => new ExportFileResource($export)]);
     }
 
-    public function download(Request $request, int $exportFile, ExportPermissionResolver $permissions, ExportFileService $service): StreamedResponse
+    // Signature kept as-is: host apps override this method in subclasses.
+    public function download(Request $request, int $exportFile, ExportPermissionResolver $permissions): StreamedResponse
     {
         $export = ExportFile::findOrFail($exportFile);
 
         abort_unless($permissions->canView($request->user(), $export), 403);
         abort_unless($export->file_path, 404);
 
-        $disk = Storage::disk($service->diskFor($export));
+        $disk = Storage::disk(app(ExportFileService::class)->diskFor($export));
 
         // The record can outlive its file (cleaned-up disk, moved storage): 404, not 500.
         abort_unless($disk->exists($export->file_path), 404);
 
         return $disk->download($export->file_path, $export->file_name ?: basename($export->file_path));
+    }
+
+    /**
+     * DELETE export-log/{id}: move one export to the trash.
+     * Signature kept from 2.4.3: host apps override this method in subclasses.
+     */
+    public function destroy(Request $request, int $exportFile, ExportFileService $service, ExportPermissionResolver $permissions): JsonResponse
+    {
+        $export = ExportFile::findOrFail($exportFile);
+
+        abort_unless($permissions->canDelete($request->user(), $export), 403, eb_resolveTrans('not_allowed_to_delete'));
+
+        $service->delete($export);
+
+        return response()->json(['message' => eb_resolveTrans('export_deleted_successfully')]);
+    }
+
+    /**
+     * DELETE export-log/delete with { "ids": [...] }: move several exports to the trash.
+     */
+    public function destroyMany(): JsonResponse
+    {
+        return $this->handleDelete('delete');
     }
 
 }

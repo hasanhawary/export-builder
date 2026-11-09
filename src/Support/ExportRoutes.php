@@ -32,7 +32,9 @@ class ExportRoutes
             $this->addRoute('get', "{$logUri}/{exportFile}/download", 'logs.download', [$jobController, 'download'], $namePrefix, $middleware);
 
             // Trash: delete keeps the file, restore brings it back, force-delete removes record and file.
-            $this->addRoute('delete', "{$logUri}/delete", 'logs.destroy', [$jobController, 'destroy'], $namePrefix, $middleware);
+            // "{id}" is the 2.4.3 route (one export); "delete" takes { "ids": [...] }.
+            $this->addRoute('delete', "{$logUri}/{exportFile}", 'logs.destroy', [$jobController, 'destroy'], $namePrefix, $middleware);
+            $this->addRoute('delete', "{$logUri}/delete", 'logs.destroy-many', [$jobController, 'destroyMany'], $namePrefix, $middleware);
             $this->addRoute('post', "{$logUri}/restore", 'logs.restore', [$jobController, 'restore'], $namePrefix, $middleware);
             $this->addRoute('delete', "{$logUri}/force-delete", 'logs.force-delete', [$jobController, 'forceDelete'], $namePrefix, $middleware);
         }
