@@ -21,6 +21,13 @@ class ExportFileFilter
         $this->applyDate($query, '>=', request('start'), startOfDay: true);
         $this->applyDate($query, '<=', request('end'), startOfDay: false);
 
+        // Trash: trashed=only (the trash) or trashed=with (everything). Default: active exports.
+        match (request('trashed')) {
+            'only'  => $query->onlyTrashed(),
+            'with'  => $query->withTrashed(),
+            default => null,
+        };
+
         return $next($query);
     }
 

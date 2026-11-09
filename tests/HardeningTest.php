@@ -246,6 +246,33 @@ class HardeningTest extends TestCase
     }
 
     // ---------------------------------------------------------------------
+    // Default route middleware
+    // ---------------------------------------------------------------------
+
+    public function test_default_config_requires_login_on_package_routes(): void
+    {
+        $middleware = (require __DIR__ . '/../config/export.php')['module']['routes']['middleware'];
+
+        $expected = class_exists(\Laravel\Sanctum\Sanctum::class) ? 'auth:sanctum' : 'auth';
+        $this->assertSame(['api', $expected], $middleware);
+    }
+
+    public function test_guests_get_401_with_the_default_middleware(): void
+    {
+        config()->set('export.module.routes.middleware', (require __DIR__ . '/../config/export.php')['module']['routes']['middleware']);
+        config()->set('export.module.routes.name_prefix', 'guest-check.');
+        config()->set('export.module.routes.prefix', 'guarded');
+        app(\HasanHawary\ExportBuilder\Support\ExportRoutes::class)->register();
+        \Illuminate\Support\Facades\Route::getRoutes()->refreshNameLookups();
+
+        $this->getJson('/guarded/export-log')->assertUnauthorized();
+        $this->getJson('/guarded/export-direct?page=hardening_person')->assertUnauthorized();
+        $this->postJson('/guarded/export', ['page' => 'hardening_person'])->assertUnauthorized();
+
+        $this->actingAs(new HardeningUser(1))->getJson('/guarded/export-log')->assertOk();
+    }
+
+    // ---------------------------------------------------------------------
     // PDF temp file
     // ---------------------------------------------------------------------
 

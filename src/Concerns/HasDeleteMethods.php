@@ -135,19 +135,26 @@ trait HasDeleteMethods
             $this->runDeleteCallbacks($this->afterDeleteCallbacks[$action] ?? [], $model);
         }
 
-        return response()->json(['message' => eb_resolveTrans(
-            $action === 'restore' ? 'restored_successfully' : 'export_deleted_successfully'
-        )]);
+        return response()->json(['message' => eb_resolveTrans(match ($action) {
+            'restore' => 'restored_successfully',
+            'force'   => 'export_force_deleted_successfully',
+            default   => 'export_deleted_successfully',
+        })]);
     }
 
     protected function applyDeleteAuthorize(string $action, Model $model): void
     {
-        if ($action === 'delete' && $model instanceof ExportFile) {
-            abort_unless(
-                app(ExportPermissionResolver::class)->canDelete(request()->user(), $model),
-                403,
-                eb_resolveTrans('not_allowed_to_delete')
-            );
+        if ($model instanceof ExportFile) {
+            $permissions = app(ExportPermissionResolver::class);
+            $user        = request()->user();
+
+            $allowed = match ($action) {
+                'restore' => $permissions->canRestore($user, $model),
+                'force'   => $permissions->canForceDelete($user, $model),
+                default   => $permissions->canDelete($user, $model),
+            };
+
+            abort_unless($allowed, 403, eb_resolveTrans("not_allowed_to_{$action}"));
 
             return;
         }
@@ -201,8 +208,14 @@ trait HasDeleteMethods
 
     protected function executeDelete(Model $model, string $action): void
     {
-        if ($action === 'delete' && $model instanceof ExportFile) {
-            app(ExportFileService::class)->delete($model);
+        if ($model instanceof ExportFile) {
+            $service = app(ExportFileService::class);
+
+            match ($action) {
+                'restore' => $service->restore($model),
+                'force'   => $service->forceDelete($model),
+                default   => $service->delete($model),
+            };
 
             return;
         }
@@ -220,9 +233,17 @@ trait HasDeleteMethods
     {
         $query = $this->model::query();
 
-        if (in_array($action, ['restore', 'force'], true) && $this->supportsSoftDeletes()) {
-            $query->onlyTrashed();
+        if ($this->supportsSoftDeletes()) {
+            // restore: trashed records only; force: trashed or active (delete permanently right away).
+            match ($action) {
+                'restore' => $query->onlyTrashed(),
+                'force'   => $query->withTrashed(),
+                default   => null,
+            };
         }
+
+        // Only plain ids; anything else (nested arrays, objects) is ignored.
+        $ids = array_values(array_filter($ids, fn ($id) => is_int($id) || (is_string($id) && $id !== '')));
 
         return $query->whereKey($ids);
     }

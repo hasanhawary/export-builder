@@ -234,4 +234,12 @@ abstract class BaseExport implements BaseExportContract, FromCollection, WithMap
     {
         return true;
     }
+
+    /**
+     * The Eloquent model this export reads from (used to resolve ExportFile::exportable()).
+     */
+    public function exportModelClass(): ?string
+    {
+        return is_string($this->model) ? $this->model : null;
+    }
 }

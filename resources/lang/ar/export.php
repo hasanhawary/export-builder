@@ -4,6 +4,7 @@ return [
     // Export job messages
     'export_started_successfully' => 'بدأ التصدير بنجاح.',
     'export_deleted_successfully' => 'تم حذف التصدير بنجاح.',
+    'export_force_deleted_successfully' => 'تم حذف التصدير نهائيًا.',
     'restored_successfully' => 'تمت استعادة السجل بنجاح.',
     'record_not_found' => 'السجل غير موجود.',
     'not_allowed_to_delete' => 'ليس لديك صلاحية حذف هذا السجل.',

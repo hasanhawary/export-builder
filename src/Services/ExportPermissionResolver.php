@@ -20,7 +20,7 @@ class ExportPermissionResolver
 
             return $configured
                 ? $this->userCan($u, $configured)
-                : $this->userCan($u, config('export.module.permissions.abilities.export', 'export'));
+                : $this->userCan($u, $this->ability('export'));
         });
     }
 
@@ -35,7 +35,7 @@ class ExportPermissionResolver
 
             return $configured
                 ? $this->userCan($u, $configured)
-                : $this->userCan($u, config('export.module.permissions.abilities.queue', 'create-export-file'));
+                : $this->userCan($u, $this->ability('queue'));
         });
     }
 
@@ -45,8 +45,8 @@ class ExportPermissionResolver
     public function canList(?Authenticatable $user): bool
     {
         return $this->check($user, function (Authenticatable $u): bool {
-            return $this->userCan($u, config('export.module.permissions.abilities.view_all', 'view-all-export-file'))
-                || $this->userCan($u, config('export.module.permissions.abilities.view_own', 'view-own-export-file'));
+            return $this->userCan($u, $this->ability('view_all'))
+                || $this->userCan($u, $this->ability('view_own'));
         });
     }
 
@@ -74,11 +74,11 @@ class ExportPermissionResolver
             return $query->whereRaw('1 = 0');
         }
 
-        if ($this->userCan($user, config('export.module.permissions.abilities.view_all', 'view-all-export-file'))) {
+        if ($this->userCan($user, $this->ability('view_all'))) {
             return $query;
         }
 
-        if ($this->userCan($user, config('export.module.permissions.abilities.view_own', 'view-own-export-file'))) {
+        if ($this->userCan($user, $this->ability('view_own'))) {
             return $query->where('created_by', $user->getAuthIdentifier());
         }
 
@@ -96,11 +96,11 @@ class ExportPermissionResolver
         }
 
         return $this->check($user, function (Authenticatable $u) use ($exportFile): bool {
-            if ($this->userCan($u, config('export.module.permissions.abilities.view_all', 'view-all-export-file'))) {
+            if ($this->userCan($u, $this->ability('view_all'))) {
                 return true;
             }
 
-            return $this->userCan($u, config('export.module.permissions.abilities.view_own', 'view-own-export-file'))
+            return $this->userCan($u, $this->ability('view_own'))
                 && (int) $exportFile->created_by === (int) $u->getAuthIdentifier();
         });
     }
@@ -116,14 +116,70 @@ class ExportPermissionResolver
         }
 
         return $this->check($user, function (Authenticatable $u) use ($exportFile): bool {
-            return $this->userCan($u, config('export.module.permissions.abilities.delete', 'delete-export-file'))
+            return $this->userCan($u, $this->ability('delete'))
                 && $this->canView($u, $exportFile);
         });
     }
 
+    /**
+     * Whether the user may restore a trashed export record.
+     * Requires the restore ability AND the ability to view the record.
+     */
+    public function canRestore(?Authenticatable $user, ExportFile $exportFile): bool
+    {
+        if (! $this->enabled()) {
+            return $this->canView($user, $exportFile);
+        }
+
+        return $this->check($user, fn (Authenticatable $u): bool => $this->userCan($u, $this->ability('restore'))
+            && $this->canView($u, $exportFile));
+    }
+
+    /**
+     * Whether the user may permanently delete an export record and its file.
+     * Requires the force-delete ability AND the ability to view the record.
+     */
+    public function canForceDelete(?Authenticatable $user, ExportFile $exportFile): bool
+    {
+        if (! $this->enabled()) {
+            return $this->canView($user, $exportFile);
+        }
+
+        return $this->check($user, fn (Authenticatable $u): bool => $this->userCan($u, $this->ability('force_delete'))
+            && $this->canView($u, $exportFile));
+    }
+
+    /**
+     * Ability names, from config, with defaults for keys an older published config does not have.
+     *
+     * @return array<string, string|array>
+     */
+    public function abilities(): array
+    {
+        return array_merge(self::DEFAULT_ABILITIES, array_filter(
+            (array) config('export.module.permissions.abilities', []),
+            fn ($ability) => $ability !== null && $ability !== '' && $ability !== []
+        ));
+    }
+
+    public const DEFAULT_ABILITIES = [
+        'export'       => 'export',
+        'queue'        => 'create-export-file',
+        'view_all'     => 'view-all-export-file',
+        'view_own'     => 'view-own-export-file',
+        'delete'       => 'delete-export-file',
+        'restore'      => 'restore-export-file',
+        'force_delete' => 'force-delete-export-file',
+    ];
+
     // -------------------------------------------------------------------------
     // Helpers
     // -------------------------------------------------------------------------
+
+    private function ability(string $key): string|array
+    {
+        return $this->abilities()[$key];
+    }
 
     /**
      * Single entry-point for all permission checks.

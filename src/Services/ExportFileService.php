@@ -48,7 +48,26 @@ class ExportFileService
         ]);
     }
 
+    /**
+     * Move the export to the trash. The file is kept so the export can be restored.
+     */
     public function delete(ExportFile $export): bool
+    {
+        return (bool) $export->delete();
+    }
+
+    /**
+     * Bring a trashed export back, together with its file.
+     */
+    public function restore(ExportFile $export): bool
+    {
+        return (bool) $export->restore();
+    }
+
+    /**
+     * Delete the export permanently: the stored file and the record.
+     */
+    public function forceDelete(ExportFile $export): bool
     {
         $disk = $this->diskFor($export);
 
@@ -56,7 +75,7 @@ class ExportFileService
             Storage::disk($disk)->delete($export->file_path);
         }
 
-        return (bool) $export->delete();
+        return (bool) $export->forceDelete();
     }
 
     /**

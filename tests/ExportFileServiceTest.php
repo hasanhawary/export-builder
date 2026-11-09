@@ -158,7 +158,7 @@ class ExportFileServiceTest extends TestCase
         $this->assertSoftDeleted('export_files', ['id' => $export->id]);
     }
 
-    public function test_delete_removes_file_from_storage_when_file_exists(): void
+    public function test_delete_keeps_the_file_so_the_export_can_be_restored(): void
     {
         Storage::fake('local');
         Storage::disk('local')->put('exports/test.xlsx', 'content');
@@ -167,7 +167,56 @@ class ExportFileServiceTest extends TestCase
 
         $this->service->delete($export);
 
+        $this->assertSoftDeleted('export_files', ['id' => $export->id]);
+        Storage::disk('local')->assertExists('exports/test.xlsx');
+    }
+
+    public function test_restore_brings_back_the_record_with_its_file(): void
+    {
+        Storage::fake('local');
+        Storage::disk('local')->put('exports/test.xlsx', 'content');
+        $export = $this->makeExport(['file_path' => 'exports/test.xlsx', 'disk' => 'local']);
+        $this->service->delete($export);
+
+        $this->assertTrue($this->service->restore($export));
+
+        $this->assertNotSoftDeleted('export_files', ['id' => $export->id]);
+        Storage::disk('local')->assertExists('exports/test.xlsx');
+    }
+
+    public function test_force_delete_removes_file_and_record(): void
+    {
+        Storage::fake('local');
+        Storage::disk('local')->put('exports/test.xlsx', 'content');
+
+        $export = $this->makeExport(['file_path' => 'exports/test.xlsx', 'disk' => 'local']);
+
+        $this->assertTrue($this->service->forceDelete($export));
+
         Storage::disk('local')->assertMissing('exports/test.xlsx');
+        $this->assertDatabaseMissing('export_files', ['id' => $export->id]);
+    }
+
+    public function test_force_delete_of_a_trashed_export_removes_its_file(): void
+    {
+        Storage::fake('local');
+        Storage::disk('local')->put('exports/test.xlsx', 'content');
+        $export = $this->makeExport(['file_path' => 'exports/test.xlsx', 'disk' => 'local']);
+        $this->service->delete($export);
+
+        $this->service->forceDelete(ExportFile::withTrashed()->find($export->id));
+
+        Storage::disk('local')->assertMissing('exports/test.xlsx');
+        $this->assertDatabaseMissing('export_files', ['id' => $export->id]);
+    }
+
+    public function test_force_delete_does_not_crash_when_file_is_already_gone(): void
+    {
+        Storage::fake('local');
+        $export = $this->makeExport(['file_path' => 'exports/missing.xlsx', 'disk' => 'local']);
+
+        $this->assertTrue($this->service->forceDelete($export));
+        $this->assertDatabaseMissing('export_files', ['id' => $export->id]);
     }
 
     public function test_delete_does_not_crash_when_file_path_is_null(): void
@@ -194,7 +243,7 @@ class ExportFileServiceTest extends TestCase
         $this->assertTrue($result);
     }
 
-    public function test_delete_uses_service_disk_when_record_disk_is_null(): void
+    public function test_force_delete_uses_service_disk_when_record_disk_is_null(): void
     {
         Storage::fake('local');
         config()->set('export.module.storage.disk', 'local');
@@ -202,7 +251,7 @@ class ExportFileServiceTest extends TestCase
 
         $export = $this->makeExport(['file_path' => 'exports/file.xlsx', 'disk' => null]);
 
-        $this->service->delete($export);
+        $this->service->forceDelete($export);
 
         Storage::disk('local')->assertMissing('exports/file.xlsx');
     }

@@ -2,6 +2,7 @@
 
 namespace HasanHawary\ExportBuilder\Support;
 
+use HasanHawary\ExportBuilder\Services\ExportPermissionResolver;
 use Illuminate\Support\Str;
 
 /**
@@ -43,7 +44,13 @@ class PermissionManagerOperations
      */
     public function operations(): array
     {
-        return collect(config('export.module.permissions.abilities', []))
+        // Defaults first, so a config published before an ability existed still registers it.
+        $abilities = array_merge(
+            ExportPermissionResolver::DEFAULT_ABILITIES,
+            array_filter((array) config('export.module.permissions.abilities', []), fn ($ability) => ! empty($ability))
+        );
+
+        return collect($abilities)
             ->flatten()
             ->filter(fn ($ability) => is_string($ability) && Str::endsWith($ability, self::SUFFIX))
             ->map(fn (string $ability) => Str::beforeLast($ability, self::SUFFIX))

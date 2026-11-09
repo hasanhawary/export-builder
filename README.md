@@ -29,6 +29,7 @@ Define one export class, get XLSX / XLS / CSV / PDF output, direct download or q
 - [Routes](#routes)
 - [Permissions](#permissions)
 - [Translations](#translations)
+- [The ExportFile model](#the-exportfile-model)
 - [Overriding Controllers and Services](#overriding-controllers-and-services)
 - [Performance](#performance)
 - [Testing](#testing)
@@ -49,6 +50,7 @@ Define one export class, get XLSX / XLS / CSV / PDF output, direct download or q
 - **Direct download** or **queued export** with an export history (list, show, download, delete)
 - **History filters** — type, status, format, creator, date range, search, sorting, pagination
 - **Ownership by default** — users only see, download and delete the exports they created
+- **Trash** — delete keeps the file, restore brings it back, force delete removes record and file
 - **Permissions** — `view-all` / `view-own` / `create` / `delete` abilities, per-page export abilities, custom resolver
 - **permission-manager integration** — abilities are registered with `hasanhawary/permission-manager` automatically
 - **Storage** — any Laravel disk (defaults to your app's default disk); every export gets its own file path
@@ -88,13 +90,13 @@ The service provider is auto-discovered.
 php artisan vendor:publish --tag=export-builder-config
 ```
 
-### 3. Protect the routes
+### 3. Check the route middleware
 
-The package endpoints use only the `api` middleware by default. Add your auth middleware in `config/export.php`:
+The package endpoints require a logged-in user by default: `['api', 'auth:sanctum']` when Sanctum is installed, `['api', 'auth']` otherwise. Change it in `config/export.php` if your API uses another guard:
 
 ```php
 'routes' => [
-    'middleware' => ['api', 'auth:sanctum'],
+    'middleware' => ['api', 'auth:api'],
     // ...
 ],
 ```
@@ -138,8 +140,8 @@ Without permissions, anyone who passes the route middleware can export, and user
 
    ```php
    'roles' => [
-       'employee' => ['permissions' => ['ExportFile' => ['create', 'view-own', 'delete']]],
-       'manager'  => ['permissions' => ['ExportFile' => ['create', 'view-all', 'delete']]],
+       'employee' => ['permissions' => ['ExportFile' => ['create', 'view-own', 'delete', 'restore']]],
+       'manager'  => ['permissions' => ['ExportFile' => ['create', 'view-all', 'delete', 'restore', 'force-delete']]],
    ],
    ```
 
@@ -255,7 +257,7 @@ return [
 
         'routes' => [
             'enabled'     => true,
-            'middleware'  => ['api'],   // add your auth middleware, e.g. 'auth:sanctum'
+            'middleware'  => ['api', 'auth:sanctum'],   // 'auth' when Sanctum is not installed
             'prefix'      => 'api',
             'export_path' => 'export',
             'direct_path' => 'export-direct',
@@ -285,6 +287,8 @@ return [
                 'view_all' => 'view-all-export-file',
                 'view_own' => 'view-own-export-file',
                 'delete'   => 'delete-export-file',
+                'restore'      => 'restore-export-file',
+                'force_delete' => 'force-delete-export-file',
             ],
             'pages' => [
                 // 'user' => ['export' => 'export-user', 'queue' => 'export-user'],
@@ -593,10 +597,14 @@ Poll for completion:
 GET api/export-log           ← list all (paginated, ?per_page=15&status=completed)
 GET api/export-log/{id}      ← show one
 GET api/export-log/{id}/download  ← stream the file
-DELETE api/export-log/delete ← soft-delete records and remove stored files
+DELETE api/export-log/delete        ← move to the trash (file kept)
+POST   api/export-log/restore       ← bring back from the trash, with its file
+DELETE api/export-log/force-delete  ← delete permanently: record and file
 ```
 
-Send the ids to delete in the request body. Each record is checked against the user's permissions; if any one is not allowed, nothing is deleted and the response is `403`.
+The trash is listed with `GET api/export-log?trashed=only`. Trashed exports cannot be shown or downloaded until they are restored. Force delete works on trashed and active exports.
+
+Send the ids in the request body. Each record is checked against the user's permissions; if any one is not allowed, nothing is changed and the response is `403`.
 
 ```json
 { "ids": [1, 2, 3] }
@@ -617,6 +625,7 @@ Send the ids to delete in the request body. Each record is checked against the u
 | `search` | `search=invoice` | Matches id, file name, type, format or status |
 | `sort_column` | `sort_column=created_at` | Any `export_files` column (default `id`) |
 | `sort_direction` | `sort_direction=asc` | `asc` or `desc` (default `desc`) |
+| `trashed` | `trashed=only` | `only` = the trash, `with` = active and trashed (default: active only) |
 | `per_page` | `per_page=15` | Page size; `-1` returns everything |
 | `page` | `page=2` | Page number |
 
@@ -648,7 +657,11 @@ All package routes default to the `api` prefix. They never claim a URI already o
 | `GET` | `api/export-log` | `export-builder.export.logs.index` | List export history |
 | `GET` | `api/export-log/{id}` | `export-builder.export.logs.show` | Show one export record |
 | `GET` | `api/export-log/{id}/download` | `export-builder.export.logs.download` | Download exported file |
-| `DELETE` | `api/export-log/delete` | `export-builder.export.logs.destroy` | Delete records and files (`ids` in the body) |
+| `DELETE` | `api/export-log/delete` | `export-builder.export.logs.destroy` | Move to the trash, file kept (`ids` in the body) |
+| `POST` | `api/export-log/restore` | `export-builder.export.logs.restore` | Restore from the trash (`ids` in the body) |
+| `DELETE` | `api/export-log/force-delete` | `export-builder.export.logs.force-delete` | Delete permanently, record and file (`ids` in the body) |
+
+`{id}` only matches numbers.
 
 **Disable all package routes:**
 
@@ -682,11 +695,13 @@ Enable and configure per-page abilities:
         'view_all' => 'view-all-export-file',
         'view_own' => 'view-own-export-file',
         'delete'   => 'delete-export-file',
+        'restore'      => 'restore-export-file',
+        'force_delete' => 'force-delete-export-file',
     ],
     'pages' => [
         'user' => [
             'export' => 'export-user',
-            'queue'  => 'create-user-export',
+            'queue'  => 'export-user',
         ],
     ],
 ],
@@ -705,6 +720,8 @@ create-export-file
 view-all-export-file
 view-own-export-file
 delete-export-file
+restore-export-file
+force-delete-export-file
 ```
 
 The operations follow `permissions.abilities`: every ability ending in `-export-file` is registered (rename `view_all` to `read-export-file` and you get `read-export-file`). Abilities without that suffix, like the default `export`, are skipped.
@@ -724,12 +741,12 @@ Give them to your roles in `config/roles.php`:
 'roles' => [
     'employee' => [
         'permissions' => [
-            'ExportFile' => ['create', 'view-own', 'delete'],
+            'ExportFile' => ['create', 'view-own', 'delete', 'restore'],
         ],
     ],
     'manager' => [
         'permissions' => [
-            'ExportFile' => ['create', 'view-all', 'delete'],
+            'ExportFile' => ['create', 'view-all', 'delete', 'restore', 'force-delete'],
         ],
     ],
 ],
@@ -809,6 +826,20 @@ return [
     'order_number' => 'Order #',
     'total_amount' => 'Total',
 ];
+```
+
+---
+
+## The ExportFile model
+
+`HasanHawary\ExportBuilder\Models\ExportFile` is a normal Eloquent model (soft deletes) you can query in your app.
+
+`exportable()` returns the exported record when `exportable_id` is set, and `null` otherwise. `exportable_type` can be a page slug (`user` → the model of `UserExport`), a morph-map alias or a model class; a type that cannot be resolved gives `null`, never a "class not found" error. It works with eager loading:
+
+```php
+$export->exportable()->associate($invoice)->save();
+
+ExportFile::with('exportable')->get();
 ```
 
 ---

@@ -30,7 +30,11 @@ class ExportRoutes
             $this->addRoute('get', $logUri, 'logs.index', [$jobController, 'index'], $namePrefix, $middleware);
             $this->addRoute('get', "{$logUri}/{exportFile}", 'logs.show', [$jobController, 'show'], $namePrefix, $middleware);
             $this->addRoute('get', "{$logUri}/{exportFile}/download", 'logs.download', [$jobController, 'download'], $namePrefix, $middleware);
+
+            // Trash: delete keeps the file, restore brings it back, force-delete removes record and file.
             $this->addRoute('delete', "{$logUri}/delete", 'logs.destroy', [$jobController, 'destroy'], $namePrefix, $middleware);
+            $this->addRoute('post', "{$logUri}/restore", 'logs.restore', [$jobController, 'restore'], $namePrefix, $middleware);
+            $this->addRoute('delete', "{$logUri}/force-delete", 'logs.force-delete', [$jobController, 'forceDelete'], $namePrefix, $middleware);
         }
     }
 
@@ -74,9 +78,14 @@ class ExportRoutes
             return;
         }
 
-        Route::{$method}($uri, $action)
+        $route = Route::{$method}($uri, $action)
             ->middleware($middleware)
             ->name($fullName);
+
+        // Record ids are numeric: "export-log/restore" etc. must never reach show().
+        if (str_contains($uri, '{exportFile}')) {
+            $route->whereNumber('exportFile');
+        }
     }
 
     private function routeUriExists(string $method, string $uri): bool

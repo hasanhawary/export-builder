@@ -321,9 +321,113 @@ class ExportRoutesTest extends TestCase
             ->assertOk()
             ->assertJsonPath('message', 'Export deleted successfully.');
 
+        // Trash: record hidden, file kept.
         $this->assertSoftDeleted('export_files', ['id' => $export->id]);
-        Storage::disk('local')->assertMissing('exports/delete-test.xlsx');
+        Storage::disk('local')->assertExists('exports/delete-test.xlsx');
         $this->assertNotNull(ExportFile::find($otherExport->id));
+
+        // It shows up in the trash, not in the normal list.
+        $this->actingAs(new TestUser([], 1))
+            ->getJson('/api/export-log?per_page=-1')
+            ->assertJsonCount(1, 'data');
+        $this->actingAs(new TestUser([], 1))
+            ->getJson('/api/export-log?per_page=-1&trashed=only')
+            ->assertJsonCount(1, 'data')
+            ->assertJsonPath('data.0.id', $export->id);
+
+        // Another user cannot restore or force-delete it.
+        $this->actingAs(new TestUser([], 2))
+            ->postJson('/api/export-log/restore', ['ids' => [$export->id]])
+            ->assertForbidden();
+        $this->actingAs(new TestUser([], 2))
+            ->deleteJson('/api/export-log/force-delete', ['ids' => [$export->id]])
+            ->assertForbidden();
+
+        // The owner restores it, with its file.
+        $this->actingAs(new TestUser([], 1))
+            ->postJson('/api/export-log/restore', ['ids' => [$export->id]])
+            ->assertOk()
+            ->assertJsonPath('message', 'Record restored successfully.');
+        $this->assertNotSoftDeleted('export_files', ['id' => $export->id]);
+        $this->actingAs(new TestUser([], 1))
+            ->get("/api/export-log/{$export->id}/download")
+            ->assertOk();
+
+        // Force delete removes record and file, even when not in the trash.
+        $this->actingAs(new TestUser([], 1))
+            ->deleteJson('/api/export-log/force-delete', ['ids' => [$export->id]])
+            ->assertOk()
+            ->assertJsonPath('message', 'Export deleted permanently.');
+        $this->assertDatabaseMissing('export_files', ['id' => $export->id]);
+        Storage::disk('local')->assertMissing('exports/delete-test.xlsx');
+
+        // Restore of something not in the trash: 404.
+        $this->actingAs(new TestUser([], 1))
+            ->postJson('/api/export-log/restore', ['ids' => [$otherExport->id]])
+            ->assertNotFound();
+    }
+
+    public function test_restore_and_force_delete_need_their_own_abilities_when_permissions_enabled(): void
+    {
+        $this->migrateExportFilesTable();
+        $this->enablePackageRoutes(['middleware' => []]);
+        config()->set('export.module.permissions.enabled', true);
+        Storage::fake('local');
+        Storage::disk('local')->put('exports/p.xlsx', 'content');
+        app(ExportRoutes::class)->register();
+
+        $export = ExportFile::create([
+            'exportable_type' => 'user', 'created_by' => 10, 'format' => 'xlsx',
+            'status' => 'completed', 'disk' => 'local', 'file_path' => 'exports/p.xlsx',
+        ]);
+        $export->delete();
+
+        $this->actingAs(new TestUser(['view-own-export-file', 'delete-export-file'], 10))
+            ->postJson('/api/export-log/restore', ['ids' => [$export->id]])
+            ->assertForbidden()
+            ->assertJsonPath('message', 'You are not allowed to restore this record.');
+
+        $this->actingAs(new TestUser(['view-own-export-file', 'restore-export-file'], 20))
+            ->postJson('/api/export-log/restore', ['ids' => [$export->id]])
+            ->assertForbidden();
+
+        $this->actingAs(new TestUser(['view-own-export-file', 'restore-export-file'], 10))
+            ->postJson('/api/export-log/restore', ['ids' => [$export->id]])
+            ->assertOk();
+
+        $this->actingAs(new TestUser(['view-own-export-file', 'delete-export-file'], 10))
+            ->deleteJson('/api/export-log/force-delete', ['ids' => [$export->id]])
+            ->assertForbidden()
+            ->assertJsonPath('message', 'You are not allowed to permanently delete this record.');
+        Storage::disk('local')->assertExists('exports/p.xlsx');
+
+        $this->actingAs(new TestUser(['view-all-export-file', 'force-delete-export-file'], 99))
+            ->deleteJson('/api/export-log/force-delete', ['ids' => [$export->id]])
+            ->assertOk();
+        Storage::disk('local')->assertMissing('exports/p.xlsx');
+    }
+
+    public function test_non_numeric_log_paths_never_reach_show(): void
+    {
+        $this->migrateExportFilesTable();
+        $this->enablePackageRoutes(['middleware' => []]);
+        app(ExportRoutes::class)->register();
+
+        foreach (['delete', 'restore', 'force-delete', 'abc'] as $path) {
+            $status = $this->actingAs(new TestUser([], 1))->getJson("/api/export-log/{$path}")->status();
+            $this->assertContains($status, [404, 405], "GET export-log/{$path} returned {$status}");
+        }
+    }
+
+    public function test_delete_ignores_non_scalar_ids(): void
+    {
+        $this->migrateExportFilesTable();
+        $this->enablePackageRoutes(['middleware' => []]);
+        app(ExportRoutes::class)->register();
+
+        $this->actingAs(new TestUser([], 1))
+            ->deleteJson('/api/export-log/delete', ['ids' => [['nested' => 1]]])
+            ->assertNotFound();
     }
 
     public function test_download_is_limited_to_owner_when_permissions_disabled(): void

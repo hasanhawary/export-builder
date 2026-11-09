@@ -40,7 +40,7 @@ class PermissionManagerOperationsTest extends TestCase
 
         $this->assertSame([
             ['name' => 'Log', 'operations' => ['read']],
-            ['name' => 'ExportFile', 'operations' => ['create', 'view-all', 'view-own', 'delete']],
+            ['name' => 'ExportFile', 'operations' => ['create', 'view-all', 'view-own', 'delete', 'restore', 'force-delete']],
         ], config('roles.additional_operations'));
     }
 
@@ -51,7 +51,7 @@ class PermissionManagerOperationsTest extends TestCase
         $this->installed()->register();
 
         $this->assertSame(
-            [['name' => 'ExportFile', 'operations' => ['create', 'view-all', 'view-own', 'delete']]],
+            [['name' => 'ExportFile', 'operations' => ['create', 'view-all', 'view-own', 'delete', 'restore', 'force-delete']]],
             config('roles.additional_operations')
         );
     }
@@ -87,6 +87,20 @@ class PermissionManagerOperationsTest extends TestCase
         $this->assertSame([], config('roles.additional_operations'));
     }
 
+    public function test_config_published_before_restore_existed_still_registers_restore_and_force_delete(): void
+    {
+        config()->set('export.module.permissions.abilities', [
+            'export' => 'export', 'queue' => 'create-export-file',
+            'view_all' => 'view-all-export-file', 'view_own' => 'view-own-export-file',
+            'delete' => 'delete-export-file',
+        ]);
+
+        $this->assertSame(
+            ['create', 'view-all', 'view-own', 'delete', 'restore', 'force-delete'],
+            (new PermissionManagerOperations)->operations()
+        );
+    }
+
     public function test_operations_follow_renamed_abilities(): void
     {
         config()->set('export.module.permissions.abilities', [
@@ -98,7 +112,7 @@ class PermissionManagerOperationsTest extends TestCase
         ]);
 
         $this->assertSame(
-            ['create', 'read', 'view-own', 'mine', 'delete'],
+            ['create', 'read', 'view-own', 'mine', 'delete', 'restore', 'force-delete'],
             (new PermissionManagerOperations)->operations()
         );
     }

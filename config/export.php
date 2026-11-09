@@ -70,9 +70,8 @@ return [
         'routes' => [
             'enabled' => true,
 
-            // Add your auth middleware (e.g. 'auth:sanctum'): without it the export
-            // endpoints are reachable by guests.
-            'middleware' => ['api'],
+            // Logged-in users only: 'auth:sanctum' when Sanctum is installed, otherwise your default 'auth' guard.
+            'middleware' => ['api', class_exists(\Laravel\Sanctum\Sanctum::class) ? 'auth:sanctum' : 'auth'],
 
             'prefix' => 'api',
             'export_path' => 'export',

@@ -49,7 +49,7 @@ class ExportBuilder
         $class = $this->buildExportPath($page);
 
         // "page" comes from the request: only real export classes may be instantiated.
-        if (! class_exists($class) || ! is_subclass_of($class, BaseExportContract::class)) {
+        if (! self::isExportClass($class)) {
             abort(404, "Export class not found for page: {$page}");
         }
 
@@ -85,9 +85,34 @@ class ExportBuilder
      */
     protected function buildExportPath(string $page): string
     {
+        return self::exportClassName($page);
+    }
+
+    /**
+     * The export class for a page, or null when there is no valid export class for it.
+     * e.g. 'user' → 'App\Tools\Export\UserExport'
+     */
+    public static function exportClassFor(string $page): ?string
+    {
+        if ($page === '') {
+            return null;
+        }
+
+        $class = self::exportClassName($page);
+
+        return self::isExportClass($class) ? $class : null;
+    }
+
+    private static function exportClassName(string $page): string
+    {
         $ns = (string) (config('export.namespace') ?: self::DEFAULT_NAMESPACE);
 
         return $ns . '\\' . Str::studly($page) . 'Export';
+    }
+
+    private static function isExportClass(string $class): bool
+    {
+        return class_exists($class) && is_subclass_of($class, BaseExportContract::class);
     }
 
     /**

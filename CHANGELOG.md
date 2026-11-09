@@ -7,8 +7,10 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) — [Semantic V
 
 ## [Unreleased]
 
-### Changed
-- When permissions are disabled, export history (list, show, download, delete) is now limited to the current user's own exports. Previously every user could reach every export. Guests can only reach exports with no owner.
+### Breaking Changes (check before upgrading)
+- **Routes require login by default**: `routes.middleware` is now `['api', 'auth:sanctum']` (`['api', 'auth']` without Sanctum). A published config keeps its own middleware.
+- **Delete moves to the trash**: `DELETE export-log/delete` keeps the file; `DELETE export-log/force-delete` removes record and file. Previously delete removed the file right away.
+- **Ownership when permissions are disabled**: list, show, download and delete only reach the current user's own exports. Previously every user could reach every export. Guests only reach exports with no owner.
 
 ### Changed
 - `storage.disk` now defaults to the app's default disk (`filesystems.default`) instead of `local`. An explicit value in a published config is still used. Existing records keep the disk they were stored on.
@@ -28,6 +30,10 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) — [Semantic V
 - Permissions that are not created yet (spatie `PermissionDoesNotExist`) now return `403` instead of a `500` error.
 
 ### Added
+- Trash: `POST export-log/restore`, `DELETE export-log/force-delete`, `?trashed=only|with` on the history list, abilities `restore-export-file` and `force-delete-export-file` (`restore`, `force_delete`; defaults apply to older published configs).
+- `ExportFile::exportable()` now works: page slugs resolve to their export class's model, morph-map aliases and class names too; unresolvable types give `null`. Eager loading supported.
+- `ExportBuilder::exportClassFor($page)` and `BaseExport::exportModelClass()`.
+- `{exportFile}` route parameters only match numbers.
 - Export permissions are registered with `hasanhawary/permission-manager` automatically (an `ExportFile` entry in `roles.additional_operations`, built from the `*-export-file` abilities). A project's own `ExportFile` entry wins; turn it off with `export.module.permissions.register => false`.
 - Export history filters: `type` / `exportable_type`, `status`, `format`, `created_by`, `start` / `end` date range. Multiple values accepted as a comma-separated list or an array.
 
