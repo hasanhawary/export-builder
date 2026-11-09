@@ -104,7 +104,8 @@ trait AdvancedFilter
      */
     private function getAllowedColumns(Builder $query): array
     {
-        $table = $query->getModel()->getTable();
+        $model = $query->getModel();
+        $table = $model->getTable();
 
         if (! isset(self::$columnListCache[$table])) {
             self::$columnListCache[$table] = $query->getConnection()
@@ -112,6 +113,8 @@ trait AdvancedFilter
                 ->getColumnListing($table);
         }
 
-        return self::$columnListCache[$table];
+        // Hidden attributes (password, remember_token, ...) can never be filtered on:
+        // matching results would let a caller guess their values.
+        return array_values(array_diff(self::$columnListCache[$table], $model->getHidden()));
     }
 }

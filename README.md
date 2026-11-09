@@ -42,7 +42,7 @@ Define one export class, get XLSX / XLS / CSV / PDF output, direct download or q
 - **XLSX, XLS, CSV, PDF** — one export class drives every format
 - **Memory-safe streaming** — `lazyById()` keyset pagination with a configurable chunk size; memory stays flat on large tables
 - **Relations** — belongs-to / has-one, has-many (concat, list, count with alias), nested dot-notation, polymorphic, custom relations
-- **Filters** — date range, advanced `whereIn` / `whereHas` / morph filters (unknown keys ignored), enum resolvers, runtime column selection
+- **Filters** — date range, advanced `whereIn` / `whereHas` / morph filters (unknown keys and hidden columns like `password` ignored), enum resolvers, runtime column selection
 - **Automatic formatting** — text, int, float, money, date, datetime, bool, array, classPath, enum `resolve()`
 - **Translations** — English and Arabic built in for headings, yes/no values and statuses
 
@@ -124,7 +124,9 @@ EXPORT_PATH=exports
 php artisan queue:work
 ```
 
-To use a dedicated queue: `EXPORT_QUEUE=exports` (and `EXPORT_QUEUE_CONNECTION` for another connection).
+To use a dedicated queue: `EXPORT_QUEUE=exports` (and `EXPORT_QUEUE_CONNECTION` for another connection). For big exports raise the limits: `EXPORT_QUEUE_TIMEOUT=900`, `EXPORT_QUEUE_TRIES=1`. A job that times out or whose worker dies marks its export `failed`, it never stays `processing`.
+
+To empty the trash automatically, set `EXPORT_TRASH_DAYS=30` and make sure the Laravel scheduler runs (`php artisan schedule:run` every minute in cron). Trashed exports older than that are deleted with their files.
 
 ### 7. Create your first export class
 
@@ -221,6 +223,14 @@ public function export(Request $request)
 }
 ```
 
+**Or through the facade:**
+
+```php
+use HasanHawary\ExportBuilder\Facades\Export;
+
+return Export::make(['page' => 'user', 'format' => 'xlsx'])->response();
+```
+
 **Via package routes:**
 
 ```
@@ -276,7 +286,17 @@ return [
         'queue' => [
             'connection' => null,       // null → default connection   (.env: EXPORT_QUEUE_CONNECTION)
             'name'       => null,       // null → default queue        (.env: EXPORT_QUEUE)
+            'timeout'    => null,       // seconds                     (.env: EXPORT_QUEUE_TIMEOUT)
+            'tries'      => null,       //                             (.env: EXPORT_QUEUE_TRIES)
         ],
+
+        'trash' => [
+            'prune_after_days' => null, // delete trashed exports + files after N days (.env: EXPORT_TRASH_DAYS)
+        ],
+
+        'max_per_page'  => 500,         // larger per_page values are lowered (-1 still returns everything)
+        'max_bulk_ids'  => 500,         // ids per delete / restore / force-delete request
+        'expose_errors' => null,        // raw job errors in the API: null → only when app.debug is on
 
         'permissions' => [
             'enabled'   => false,       // (.env: EXPORT_PERMISSIONS)
@@ -528,6 +548,8 @@ Or via JSON:
 ---
 
 ## PDF Output
+
+> Rows are loaded in chunks (`chunk_size`) and only their values are kept, but mPDF builds the whole document in memory. For very large datasets prefer `xlsx` / `csv`, which stream.
 
 The default Blade view is `export::pdf.export` (the view name, not a translation key).
 

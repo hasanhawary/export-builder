@@ -37,7 +37,15 @@ trait HasPdfOutput
      */
     public function pdfData(): array
     {
-        $records = $this->buildQuery()->get();
+        // Load in chunks (with eager loads, keeping any custom order) and keep only the row
+        // values, never every model + relation in memory at once. mPDF still needs the full HTML,
+        // so very large datasets are better exported as xlsx / csv.
+        $rows = [];
+        (clone $this->buildQuery())->chunk(max(1, (int) config('export.chunk_size', 500)), function ($records) use (&$rows): void {
+            foreach ($records as $record) {
+                $rows[] = array_values($this->map($record));
+            }
+        });
 
         $type      = class_basename(static::class);
         $type      = Str::plural(Str::snake(Str::replaceLast('Export', '', $type)));
@@ -52,7 +60,7 @@ trait HasPdfOutput
         return [
             'title'   => $title,
             'columns' => array_map(fn ($h) => ['label' => $h, 'width' => 'auto'], $this->headings()),
-            'rows'    => $records->map(fn ($r) => array_values($this->map($r)))->toArray(),
+            'rows'    => $rows,
         ];
     }
 }

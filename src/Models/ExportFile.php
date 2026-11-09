@@ -8,6 +8,7 @@ use HasanHawary\ExportBuilder\Models\Relations\ExportableMorphTo;
 use HasanHawary\ExportBuilder\Services\ExportFileService;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\Prunable;
 use Illuminate\Database\Eloquent\Relations\MorphTo;
 use Illuminate\Database\Eloquent\Relations\Relation;
 use Illuminate\Database\Eloquent\SoftDeletes;
@@ -16,7 +17,7 @@ use Throwable;
 
 class ExportFile extends Model
 {
-    use SoftDeletes;
+    use Prunable, SoftDeletes;
 
     protected $table = 'export_files';
 
@@ -101,6 +102,33 @@ class ExportFile extends Model
     public function isReady(): bool
     {
         return $this->status === ExportStatus::Completed->value && ! empty($this->file_path);
+    }
+
+    /**
+     * Trashed exports older than export.module.trash.prune_after_days (off when not set).
+     * Run by `php artisan model:prune`, scheduled by the package when the option is set.
+     */
+    public function prunable(): Builder
+    {
+        $days = (int) config('export.module.trash.prune_after_days');
+
+        if ($days <= 0) {
+            return static::query()->whereRaw('1 = 0');
+        }
+
+        return static::onlyTrashed()->where($this->getQualifiedDeletedAtColumn(), '<=', now()->subDays($days));
+    }
+
+    /**
+     * Remove the stored file before the record is deleted permanently.
+     */
+    protected function pruning(): void
+    {
+        $disk = Storage::disk(app(ExportFileService::class)->diskFor($this));
+
+        if ($this->file_path && $disk->exists($this->file_path)) {
+            $disk->delete($this->file_path);
+        }
     }
 
     public function url(): ?string

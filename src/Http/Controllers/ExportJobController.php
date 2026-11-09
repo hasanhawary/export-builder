@@ -12,6 +12,7 @@ use HasanHawary\ExportBuilder\Jobs\ExportToFile;
 use HasanHawary\ExportBuilder\Models\ExportFile;
 use HasanHawary\ExportBuilder\Services\ExportFileService;
 use HasanHawary\ExportBuilder\Services\ExportPermissionResolver;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Pipeline\Pipeline;
@@ -19,7 +20,6 @@ use Illuminate\Routing\Controller;
 use Illuminate\Support\Facades\Storage;
 use Symfony\Component\HttpFoundation\StreamedResponse;
 use function eb_resolveTrans;
-use function wrapPaginate;
 
 class ExportJobController extends Controller
 {
@@ -42,7 +42,26 @@ class ExportJobController extends Controller
             ->through([ExportFileFilter::class, SearchFilter::class, OrderByFilter::class])
             ->thenReturn();
 
-        return successResponse(wrapPaginate($query, ExportFileResource::class));
+        return response()->json($this->listResponse($query));
+    }
+
+    /**
+     * Same shape as 2.4.3: { data, links, meta } (just { data } for per_page=-1).
+     * Built here on purpose: the app's global wrapPaginate()/successResponse() may differ.
+     */
+    protected function listResponse(Builder $query): array
+    {
+        $requested = request('per_page');
+
+        if (is_scalar($requested) && (string) $requested === '-1') {
+            return ExportFileResource::collection($query->get())->response()->getData(true);
+        }
+
+        $perPage = is_scalar($requested) && ctype_digit((string) $requested) && (int) $requested > 0
+            ? min((int) $requested, max(1, (int) config('export.module.max_per_page', 100)))
+            : 15;
+
+        return ExportFileResource::collection($query->paginate($perPage))->response()->getData(true);
     }
 
     public function export(ExportRequest $request, ExportFileService $service, ExportPermissionResolver $permissions): JsonResponse

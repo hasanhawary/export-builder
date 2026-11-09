@@ -3,6 +3,7 @@
 namespace HasanHawary\ExportBuilder\Concerns;
 
 use Carbon\Carbon;
+use HasanHawary\ExportBuilder\Support\ExportHelper;
 use Illuminate\Support\Str;
 
 trait HelperTrait
@@ -61,25 +62,10 @@ trait HelperTrait
             return '';
         }
 
-        $key       = Str::snake(Str::lower((string) $trans));
-        $transFile = config('export.trans_file', 'export');
+        // Lowercase first so 'ID' → 'id' (not 'i_d'); fall back to the original text.
+        $key = Str::snake(Str::lower((string) $trans));
 
-        // If trans_file has no '::' and no '.', it is a package namespace key.
-        // The package registers translations as 'export' namespace with file 'export',
-        // so the lookup key must be 'export::export.{key}'.
-        if (! str_contains($transFile, '::') && ! str_contains($transFile, '.')) {
-            $namespacedKey = "{$transFile}::{$transFile}.{$key}";
-            $translated    = __($namespacedKey);
-            if (! Str::startsWith($translated, "{$transFile}::")) {
-                return $translated;
-            }
-        }
-
-        // Flat file lookup (e.g. trans_file = 'api' → 'api.{key}')
-        $flatKey    = "{$transFile}.{$key}";
-        $translated = __($flatKey);
-
-        return Str::startsWith($translated, "{$transFile}.") ? (string) $trans : $translated;
+        return ExportHelper::lookup($key, (string) config('export.trans_file', 'export')) ?? (string) $trans;
     }
 
     public function mergeKeyedArrays(array $arrays): array

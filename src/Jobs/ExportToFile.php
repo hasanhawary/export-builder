@@ -10,6 +10,7 @@ use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Bus\Dispatchable;
 use Illuminate\Queue\InteractsWithQueue;
 use Illuminate\Queue\SerializesModels;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Storage;
 use RuntimeException;
 use Throwable;
@@ -17,6 +18,12 @@ use Throwable;
 class ExportToFile implements ShouldQueue
 {
     use Dispatchable, InteractsWithQueue, Queueable, SerializesModels;
+
+    /** Seconds before the worker kills the job (null → worker default). Untyped so subclasses can override. */
+    public $timeout = null;
+
+    /** Attempts before the job fails (null → worker default). */
+    public $tries = null;
 
     public function __construct(public int $exportId)
     {
@@ -30,6 +37,14 @@ class ExportToFile implements ShouldQueue
         if ($queue) {
             $this->onQueue($queue);
         }
+
+        $this->timeout ??= $this->positiveInt(config('export.module.queue.timeout'));
+        $this->tries   ??= $this->positiveInt(config('export.module.queue.tries'));
+    }
+
+    private function positiveInt(mixed $value): ?int
+    {
+        return is_numeric($value) && (int) $value > 0 ? (int) $value : null;
     }
 
     public function handle(ExportFileService $service): void
@@ -68,6 +83,7 @@ class ExportToFile implements ShouldQueue
             $service->markAsCompleted($export, $path, $name);
         } catch (Throwable $e) {
             $service->markAsFailed($export, $e->getMessage());
+            Log::error('ExportBuilder: queued export failed', ['export_id' => $export->id, 'exception' => $e]);
             throw $e;
         } finally {
             // The generated file is never sent as a response here, so remove it ourselves.

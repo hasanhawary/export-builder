@@ -10,6 +10,41 @@ use Orchestra\Testbench\TestCase;
 
 class WrapPaginateTest extends TestCase
 {
+    protected function getPackageProviders($app): array
+    {
+        return [\HasanHawary\ExportBuilder\ExportBuilderServiceProvider::class];
+    }
+
+    public function test_generic_helpers_are_not_loaded_through_composer_files(): void
+    {
+        // Composer "files" run before the app's own helper files: anything defined there
+        // would replace the app's wrapPaginate()/successResponse() (the 2.4.4 regression).
+        $files = json_decode(file_get_contents(__DIR__ . '/../composer.json'), true)['autoload']['files'] ?? [];
+        $this->assertSame(['src/helpers.php'], $files);
+
+        $helpers = file_get_contents(__DIR__ . '/../src/helpers.php');
+        $this->assertStringNotContainsString('function wrapPaginate', $helpers);
+        $this->assertStringNotContainsString('function successResponse', $helpers);
+
+        $this->assertTrue(function_exists('wrapPaginate'), 'fallback is loaded by the service provider');
+        $this->assertTrue(function_exists('successResponse'));
+    }
+
+    public function test_an_app_helper_defined_before_the_provider_wins(): void
+    {
+        // Simulates the real order in a fresh PHP process: app helper first, then the package.
+        $script = sprintf(
+            "function wrapPaginate(\$q = null, \$r = null, \$m = []) { return 'app'; } "
+            . 'require %s; require %s; echo wrapPaginate();',
+            var_export(realpath(__DIR__ . '/../vendor/autoload.php'), true),
+            var_export(realpath(__DIR__ . '/../src/fallback-helpers.php'), true),
+        );
+
+        $output = shell_exec(escapeshellarg(PHP_BINARY) . ' -r ' . escapeshellarg($script));
+
+        $this->assertSame('app', trim((string) $output));
+    }
+
     public function test_invalid_page_sizes_use_the_default(): void
     {
         config()->set('project.pagination.per_page', 15);

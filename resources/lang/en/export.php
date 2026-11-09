@@ -5,6 +5,7 @@ return [
     'export_started_successfully' => 'Export started successfully.',
     'export_deleted_successfully' => 'Export deleted successfully.',
     'export_force_deleted_successfully' => 'Export deleted permanently.',
+    'export_failed_message' => 'The export could not be created. Please try again.',
     'restored_successfully' => 'Record restored successfully.',
     'record_not_found' => 'Record not found.',
     'not_allowed_to_delete' => 'You are not allowed to delete this record.',

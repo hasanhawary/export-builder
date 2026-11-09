@@ -20,6 +20,10 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) — [Semantic V
 
 ### Fixed
 - **Upgrade from 2.4.3 broke host apps (regression in 2.4.4 / 2.4.5)**: `ExportJobController::destroy()` lost its 2.4.3 signature, so a host controller overriding `destroy(Request, int $exportFile, ...)` failed with a PHP fatal error, and `DELETE export-log/{id}` was removed. Both are back; bulk delete is now `destroyMany()` on `DELETE export-log/delete`. Public method signatures that hosts override (`index`, `show`, `download`, `destroy`, `export`, job `handle`) are unchanged from 2.4.3 and covered by a compatibility test.
+- Security: `error_message` in the API showed raw exception text (SQL, paths). Users now get a translated message; the raw text stays in the database and the log, and is shown when `app.debug` or `module.expose_errors` is on.
+- Security: advanced filters accepted hidden model columns (`password`, `remember_token`), which allowed guessing their values. Hidden attributes are no longer filterable.
+- PDF data is loaded in chunks keeping only row values (custom ordering kept), instead of every model and relation at once.
+- Translation lookup is shared by `ExportHelper::resolveTrans()` and export headings (`ExportHelper::lookup()`).
 - `ExportBuilder` closed output buffers it did not own (`ob_end_clean()` + `ob_start()`); it now only clears the current buffer's content.
 - Security: two queued exports of the same page in the same minute wrote to the same file, so one user could download another user's export.
 - Security: `page` could instantiate any class in the export namespace ending in `Export`; it must now implement `BaseExportContract`.
@@ -32,6 +36,11 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) — [Semantic V
 - Permissions that are not created yet (spatie `PermissionDoesNotExist`) now return `403` instead of a `500` error.
 
 ### Added
+- Failed queue jobs (timeout, killed worker, tries exhausted) mark their export `failed` through a `JobFailed` listener; exports no longer stay `processing` forever. Job errors are logged.
+- `module.queue.timeout` / `tries` (`EXPORT_QUEUE_TIMEOUT`, `EXPORT_QUEUE_TRIES`); a subclass's own `$timeout` / `$tries` still win.
+- Trash pruning: `module.trash.prune_after_days` (`EXPORT_TRASH_DAYS`) deletes old trashed exports and their files via `model:prune`, scheduled daily by the package. Off by default.
+- Limits: `module.max_per_page` (500) caps `per_page`, `module.max_bulk_ids` (500) caps ids per bulk request (`422` above it).
+- `Export::make($filters)->response()` through the facade.
 - Trash: `POST export-log/restore`, `DELETE export-log/force-delete`, `?trashed=only|with` on the history list, abilities `restore-export-file` and `force-delete-export-file` (`restore`, `force_delete`; defaults apply to older published configs).
 - `ExportFile::exportable()` now works: page slugs resolve to their export class's model, morph-map aliases and class names too; unresolvable types give `null`. Eager loading supported.
 - `ExportBuilder::exportClassFor($page)` and `BaseExport::exportModelClass()`.

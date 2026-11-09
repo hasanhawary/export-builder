@@ -7,6 +7,11 @@ use HasanHawary\ExportBuilder\Services\ExportFileService;
 use HasanHawary\ExportBuilder\Services\ExportPermissionResolver;
 use HasanHawary\ExportBuilder\Support\ExportRoutes;
 use HasanHawary\ExportBuilder\Support\PermissionManagerOperations;
+use HasanHawary\ExportBuilder\Listeners\MarkExportAsFailed;
+use HasanHawary\ExportBuilder\Models\ExportFile;
+use Illuminate\Console\Scheduling\Schedule;
+use Illuminate\Queue\Events\JobFailed;
+use Illuminate\Support\Facades\Event;
 use Illuminate\Support\ServiceProvider;
 
 class ExportBuilderServiceProvider extends ServiceProvider
@@ -45,6 +50,16 @@ class ExportBuilderServiceProvider extends ServiceProvider
         // Make the export-file permissions known to hasanhawary/permission-manager (if installed).
         $this->app->make(PermissionManagerOperations::class)->register();
 
+        // Exports whose job was killed (timeout, crash) are marked failed instead of staying "processing".
+        Event::listen(JobFailed::class, MarkExportAsFailed::class);
+
+        // Empty the trash daily when export.module.trash.prune_after_days is set (needs the scheduler running).
+        $this->callAfterResolving(Schedule::class, function (Schedule $schedule): void {
+            if ((int) config('export.module.trash.prune_after_days') > 0) {
+                $schedule->command('model:prune', ['--model' => [ExportFile::class]])->daily();
+            }
+        });
+
         $this->app->booted(function (): void {
             $this->app->make(ExportRoutes::class)->register();
         });
@@ -52,6 +67,10 @@ class ExportBuilderServiceProvider extends ServiceProvider
 
     public function register(): void
     {
+        // Generic helpers, only for apps that do not have their own. Loaded here (after Composer
+        // included the app's helper files) so the app's versions are never replaced.
+        require_once __DIR__ . '/fallback-helpers.php';
+
         // Merge package config
         $this->mergeConfigFrom(__DIR__ . '/../config/export.php', 'export');
 

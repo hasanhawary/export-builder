@@ -35,6 +35,15 @@ class ExportBuilder
     }
 
     /**
+     * Build an exporter for the given filters; also works through the facade:
+     * Export::make(['page' => 'user', 'format' => 'xlsx'])->response()
+     */
+    public static function make(array $filter): static
+    {
+        return new static($filter);
+    }
+
+    /**
      * Resolve the export class, instantiate it, and return a binary file download response.
      */
     public function response(): BinaryFileResponse

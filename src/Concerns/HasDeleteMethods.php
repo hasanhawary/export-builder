@@ -243,7 +243,10 @@ trait HasDeleteMethods
         }
 
         // Only plain ids; anything else (nested arrays, objects) is ignored.
-        $ids = array_values(array_filter($ids, fn ($id) => is_int($id) || (is_string($id) && $id !== '')));
+        $ids = array_values(array_unique(array_filter($ids, fn ($id) => is_int($id) || (is_string($id) && $id !== ''))));
+
+        $max = max(1, (int) config('export.module.max_bulk_ids', 500));
+        abort_if(count($ids) > $max, 422, "At most {$max} ids per request.");
 
         return $query->whereKey($ids);
     }

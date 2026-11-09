@@ -97,11 +97,29 @@ return [
             'path' => env('EXPORT_PATH', 'exports'),
         ],
 
-        // Queue for the queued-export job. null → your app's default connection / queue.
+        // Queue for the queued-export job. null → your app's default connection / queue / worker limits.
+        // A killed or timed-out job marks its export "failed" (it never stays "processing").
         'queue' => [
             'connection' => env('EXPORT_QUEUE_CONNECTION'),
             'name' => env('EXPORT_QUEUE'),
+            'timeout' => env('EXPORT_QUEUE_TIMEOUT'),   // seconds
+            'tries' => env('EXPORT_QUEUE_TRIES'),
         ],
+
+        // Trash: deleted exports keep their file until restored or force-deleted.
+        // Set a number of days to delete them permanently (record + file) automatically.
+        // Runs daily via `model:prune` (needs `php artisan schedule:run` in cron). null → never.
+        'trash' => [
+            'prune_after_days' => env('EXPORT_TRASH_DAYS'),
+        ],
+
+        // Request limits for the history endpoints.
+        'max_per_page' => 100,   // per_page above this is lowered, as in 2.4.3 (per_page=-1 still returns everything)
+        'max_bulk_ids' => 500,   // ids per delete / restore / force-delete request
+
+        // Show the raw job error (SQL, paths) in the API. null → only when app.debug is on;
+        // otherwise users get a translated "could not be created" message. Always logged.
+        'expose_errors' => null,
 
         'permissions' => [
             // Off: no ability checks (anyone who passes the route middleware can export),

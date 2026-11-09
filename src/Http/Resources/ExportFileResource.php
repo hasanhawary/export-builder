@@ -21,11 +21,30 @@ class ExportFileResource extends JsonResource
             'file_url' => $this->url(),
             'disk' => $this->disk,
             'metadata' => $this->metadata ?? [],
-            'error_message' => $this->error_message,
+            'error_message' => $this->publicErrorMessage(),
             'started_at' => $this->started_at?->toISOString(),
             'completed_at' => $this->completed_at?->toISOString(),
             'created_at' => $this->created_at?->toISOString(),
             'updated_at' => $this->updated_at?->toISOString(),
         ];
+    }
+
+    /**
+     * The raw error (SQL, paths, class names) stays in the database and the log.
+     * Users get a translated message unless debug or 'expose_errors' is on.
+     */
+    protected function publicErrorMessage(): ?string
+    {
+        if (! $this->error_message) {
+            return null;
+        }
+
+        $expose = config('export.module.expose_errors');
+
+        if ($expose ?? config('app.debug')) {
+            return $this->error_message;
+        }
+
+        return eb_resolveTrans('export_failed_message');
     }
 }

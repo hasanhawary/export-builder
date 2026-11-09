@@ -46,10 +46,22 @@ final class ExportHelper
 
         $key = $snaked ? Str::snake((string) $trans) : (string) $trans;
 
-        // Look up in the requested locale only; never change the app's locale for the rest of the request.
+        return self::lookup($key, $page, $lang) ?? (string) $trans;
+    }
+
+    /**
+     * Translation for an exact key, or null when there is none. Single lookup used by
+     * resolveTrans() here and HelperTrait::resolveTrans() for export headings.
+     *
+     * - 'export' (single word) → package namespace first ('export::export.{key}'), then flat file
+     * - 'api' / 'my.file'      → flat file ('api.{key}')
+     *
+     * Looks up in $lang only; the app's locale is never changed.
+     */
+    public static function lookup(string $key, string $page, ?string $lang = null): ?string
+    {
         $locale = $lang ?: null;
 
-        // Package namespace lookup (e.g. 'export' → 'export::export.{key}')
         if (! str_contains($page, '::') && ! str_contains($page, '.')) {
             $translated = __("{$page}::{$page}.{$key}", [], $locale);
             if (is_string($translated) && ! Str::startsWith($translated, "{$page}::")) {
@@ -57,9 +69,8 @@ final class ExportHelper
             }
         }
 
-        // Flat file lookup (e.g. 'api.{key}')
         $translated = __("{$page}.{$key}", [], $locale);
 
-        return ! is_string($translated) || Str::startsWith($translated, "{$page}.") ? (string) $trans : $translated;
+        return is_string($translated) && ! Str::startsWith($translated, "{$page}.") ? $translated : null;
     }
 }
