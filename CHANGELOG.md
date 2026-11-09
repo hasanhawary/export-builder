@@ -10,7 +10,21 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) — [Semantic V
 ### Changed
 - When permissions are disabled, export history (list, show, download, delete) is now limited to the current user's own exports. Previously every user could reach every export. Guests can only reach exports with no owner.
 
+### Changed
+- `storage.disk` now defaults to the app's default disk (`filesystems.default`) instead of `local`. An explicit value in a published config is still used. Existing records keep the disk they were stored on.
+- Queued exports are stored as `{path}/{id}_{file-name}`; the download name is unchanged.
+- `maatwebsite/excel` is limited to `^3.1` (the package did not work with 4.x).
+- Config: `EXPORT_DISK`, `EXPORT_PATH`, `EXPORT_CHUNK_SIZE`, `EXPORT_PERMISSIONS`, new `module.queue` (`EXPORT_QUEUE_CONNECTION`, `EXPORT_QUEUE`).
+
 ### Fixed
+- Security: two queued exports of the same page in the same minute wrote to the same file, so one user could download another user's export.
+- Security: `page` could instantiate any class in the export namespace ending in `Export`; it must now implement `BaseExportContract`.
+- `columns.*` / `related.*` must be strings (nested arrays caused a 500).
+- PDF downloads left two files in the temp folder per request; the queued job left its generated file behind.
+- Downloading an export whose file is gone answered `500`; now `404`.
+- `file_url` on disks that cannot build URLs (ftp, sftp) broke the whole history listing; it is now `null`.
+- `ExportHelper::resolveTrans($key, $page, $lang)` changed the app locale for the rest of the request.
+- `successResponse()` was only defined when `wrapPaginate()` was not; `wrapPaginate()` now ignores invalid `per_page` values, applies the resource when paginating, and metadata can no longer replace `data`.
 - Permissions that are not created yet (spatie `PermissionDoesNotExist`) now return `403` instead of a `500` error.
 
 ### Added

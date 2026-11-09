@@ -6,7 +6,7 @@ return [
     | Export Namespace
     |--------------------------------------------------------------------------
     |
-    | Namespace used to resolve export classes dynamically.
+    | Namespace used to resolve export classes from the "page" value.
     | Example: page=user => App\Tools\Export\UserExport
     |
     */
@@ -17,20 +17,20 @@ return [
     | Streaming Chunk Size
     |--------------------------------------------------------------------------
     |
-    | Number of rows fetched per chunk when streaming large exports via
-    | lazyById(). Increase for faster exports, decrease to reduce peak
-    | memory per chunk. Default: 500.
+    | Rows fetched per chunk when streaming large exports via lazyById().
+    | Higher is faster, lower uses less memory per chunk.
     |
     */
-    'chunk_size' => 500,
+    'chunk_size' => (int) env('EXPORT_CHUNK_SIZE', 500),
 
     /*
     |--------------------------------------------------------------------------
-    | Translation Settings
+    | Translation File
     |--------------------------------------------------------------------------
     |
-    | Static settings can be defined here.
-    | Dynamic settings can be resolved using settings_resolver.
+    | Where column headings, yes/no values and statuses are translated from.
+    | - 'export' → the package's own file (publish it to customise)
+    | - 'api'    → your app's lang/{locale}/api.php
     |
     */
     'trans_file' => 'export',
@@ -40,8 +40,10 @@ return [
     | PDF Settings
     |--------------------------------------------------------------------------
     |
-    | Static settings can be defined here.
-    | Dynamic settings can be resolved using settings_resolver.
+    | 'settings' are passed to the PDF view as $settings.
+    | 'settings_resolver' can return them dynamically (merged over 'settings'):
+    | a Closure, an invokable class string, or [ClassName::class, 'method'].
+    | It must return an array.
     |
     */
     'pdf' => [
@@ -50,19 +52,6 @@ return [
             // 'company_name' => null,
         ],
 
-        /*
-        |--------------------------------------------------------------------------
-        | Settings Resolver
-        |--------------------------------------------------------------------------
-        |
-        | Supported:
-        | - Closure
-        | - Invokable class string
-        | - [ClassName::class, 'method']
-        |
-        | The resolver must return array.
-        |
-        */
         'settings_resolver' => null,
     ],
 
@@ -71,9 +60,8 @@ return [
     | Package Export Module
     |--------------------------------------------------------------------------
     |
-    | The package can expose its own export endpoints, but it must never assume
-    | ownership of a host application's /export routes. Keep this module behind
-    | config so existing projects can disable, move, or replace it.
+    | Ready-made endpoints: direct download, queued exports and export history.
+    | Routes never replace a route your app already defines (same name or URI).
     |
     */
     'module' => [
@@ -81,7 +69,11 @@ return [
 
         'routes' => [
             'enabled' => true,
+
+            // Add your auth middleware (e.g. 'auth:sanctum'): without it the export
+            // endpoints are reachable by guests.
             'middleware' => ['api'],
+
             'prefix' => 'api',
             'export_path' => 'export',
             'direct_path' => 'export-direct',
@@ -101,28 +93,39 @@ return [
         ],
 
         'storage' => [
-            'disk' => 'local',
-            'path' => 'exports',
+            // null → your app's default disk (config('filesystems.default')).
+            'disk' => env('EXPORT_DISK'),
+            'path' => env('EXPORT_PATH', 'exports'),
+        ],
+
+        // Queue for the queued-export job. null → your app's default connection / queue.
+        'queue' => [
+            'connection' => env('EXPORT_QUEUE_CONNECTION'),
+            'name' => env('EXPORT_QUEUE'),
         ],
 
         'permissions' => [
-            'enabled' => false,
+            // Off: no ability checks (anyone who passes the route middleware can export),
+            // and users only see / download / delete the files they created.
+            'enabled' => (bool) env('EXPORT_PERMISSIONS', false),
 
-            // Add the "*-export-file" abilities to hasanhawary/permission-manager automatically
+            // Register the "*-export-file" abilities with hasanhawary/permission-manager automatically
             // (ExportFile entry in roles.additional_operations). Ignored if that package is not installed.
             'register' => true,
 
             'abilities' => [
-                'export' => 'export',
-                'queue' => 'create-export-file',
+                'export' => 'export',               // direct download, for pages not listed in 'pages'
+                'queue' => 'create-export-file',    // queued export, for pages not listed in 'pages'
                 'view_all' => 'view-all-export-file',
                 'view_own' => 'view-own-export-file',
                 'delete' => 'delete-export-file',
             ],
+
+            // Per-page abilities, e.g. page=user:
             'pages' => [
                 // 'user' => [
                 //     'export' => 'export-user',
-                //     'queue' => 'create-export-file',
+                //     'queue' => 'export-user',
                 // ],
             ],
         ],

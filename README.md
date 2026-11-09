@@ -37,19 +37,27 @@ Define one export class, get XLSX / XLS / CSV / PDF output, direct download or q
 
 ## Features
 
-- **XLSX, XLS, CSV, PDF** — one export class drives all formats
-- **Memory-safe streaming** — `lazyById()` cursor, configurable chunk size, peak memory stays flat regardless of dataset size
-- **Direct download or queued job** — same export class, two delivery modes
-- **Relation support** — belongs-to/has-one, has-many concat, has-many list, count with alias, nested dot-notation, polymorphic
-- **Advanced filters** — `whereIn`, `whereHas`, morph constraints, enum resolvers
-- **Column selection filter** — client can request a subset of columns at runtime
-- **Automatic type formatting** — text, int, float, money, date, datetime, bool, array, classPath, Enum
-- **Full translation support** — English and Arabic built-in; headings and bool values auto-translated
-- **Permission gating** — per-page permission config, custom resolver override, scoped list visibility
-- **Safe package routes** — never claims `/export`; host routes always win on conflict
-- **Publishable** — config, views, migrations, and lang files are all publishable
-- **Contracts / interfaces** — `BaseExportContract` for type-hinting custom implementations
-- **121 tests, 257 assertions**
+**Exports**
+- **XLSX, XLS, CSV, PDF** — one export class drives every format
+- **Memory-safe streaming** — `lazyById()` keyset pagination with a configurable chunk size; memory stays flat on large tables
+- **Relations** — belongs-to / has-one, has-many (concat, list, count with alias), nested dot-notation, polymorphic, custom relations
+- **Filters** — date range, advanced `whereIn` / `whereHas` / morph filters (unknown keys ignored), enum resolvers, runtime column selection
+- **Automatic formatting** — text, int, float, money, date, datetime, bool, array, classPath, enum `resolve()`
+- **Translations** — English and Arabic built in for headings, yes/no values and statuses
+
+**Ready-made endpoints (optional module)**
+- **Direct download** or **queued export** with an export history (list, show, download, delete)
+- **History filters** — type, status, format, creator, date range, search, sorting, pagination
+- **Ownership by default** — users only see, download and delete the exports they created
+- **Permissions** — `view-all` / `view-own` / `create` / `delete` abilities, per-page export abilities, custom resolver
+- **permission-manager integration** — abilities are registered with `hasanhawary/permission-manager` automatically
+- **Storage** — any Laravel disk (defaults to your app's default disk); every export gets its own file path
+- **Safe by design** — host routes always win on conflict, only real export classes can be loaded from `page`, temp files are cleaned up, missing permissions answer `403` and missing files `404`
+
+**Extensible**
+- Override controllers, services and the permission resolver from config
+- Publish config, PDF view, translations and migration
+- `BaseExportContract` for custom export implementations
 
 ---
 
@@ -59,38 +67,114 @@ Define one export class, get XLSX / XLS / CSV / PDF output, direct download or q
 |---|---|
 | PHP | 8.1 – 8.5 |
 | Laravel | 10, 11, 12, 13 |
-| `maatwebsite/excel` | ^3.1 or ^4.0 |
+| `maatwebsite/excel` | ^3.1 |
 | `carlos-meneses/laravel-mpdf` | ^2.0 |
 
 ---
 
 ## Installation
 
+### 1. Install
+
 ```bash
 composer require hasanhawary/export-builder
 ```
 
-Laravel auto-discovers the service provider. No manual registration needed.
+The service provider is auto-discovered.
 
-**Optional publishes:**
+### 2. Publish the config
 
 ```bash
-# Config
 php artisan vendor:publish --tag=export-builder-config
+```
 
-# PDF Blade view (customise the template)
-php artisan vendor:publish --tag=export-builder-views
+### 3. Protect the routes
 
-# Language files (en + ar)
-php artisan vendor:publish --tag=export-builder-lang
-# Publishes to: lang/en/export.php and lang/ar/export.php
+The package endpoints use only the `api` middleware by default. Add your auth middleware in `config/export.php`:
 
-# Migration for queued export history
-php artisan vendor:publish --tag=export-builder-migrations
+```php
+'routes' => [
+    'middleware' => ['api', 'auth:sanctum'],
+    // ...
+],
+```
+
+### 4. Run the migration (queued exports and history)
+
+```bash
 php artisan migrate
 ```
 
-Published lang files land in `lang/vendor/export/{en,ar}/export.php`.
+The `export_files` migration is loaded from the package. Publish it only if you want to edit it: `php artisan vendor:publish --tag=export-builder-migrations`.
+
+### 5. Choose where files are stored (optional)
+
+Files go to your app's default disk (`FILESYSTEM_DISK`) under `exports/`. To use another disk or folder, set in `.env`:
+
+```dotenv
+EXPORT_DISK=s3
+EXPORT_PATH=exports
+```
+
+### 6. Run a queue worker (queued exports only)
+
+```bash
+php artisan queue:work
+```
+
+To use a dedicated queue: `EXPORT_QUEUE=exports` (and `EXPORT_QUEUE_CONNECTION` for another connection).
+
+### 7. Create your first export class
+
+See [Quick Start](#quick-start). Then call `GET api/export-direct?page=user`.
+
+### 8. Permissions (optional)
+
+Without permissions, anyone who passes the route middleware can export, and users only see their own exports. To control it per role:
+
+**With `hasanhawary/permission-manager`:**
+
+1. Give the abilities to your roles in `config/roles.php` (they are registered for you, nothing to add in `additional_operations`):
+
+   ```php
+   'roles' => [
+       'employee' => ['permissions' => ['ExportFile' => ['create', 'view-own', 'delete']]],
+       'manager'  => ['permissions' => ['ExportFile' => ['create', 'view-all', 'delete']]],
+   ],
+   ```
+
+2. For each page you export, add an `export` operation to its model and map it:
+
+   ```php
+   // app/Models/User.php
+   public bool $inPermission = true;
+   public array $specialOperations = ['export']; // → export-user
+   ```
+
+   ```php
+   // config/export.php → module.permissions.pages
+   'user' => ['export' => 'export-user', 'queue' => 'export-user'],
+   ```
+
+3. Create the permissions and turn the check on:
+
+   ```bash
+   php artisan permissions:reset --skip
+   ```
+
+   ```dotenv
+   EXPORT_PERMISSIONS=true
+   ```
+
+**Without it:** create the same ability names with spatie (or any `can()` gate) and set `EXPORT_PERMISSIONS=true`. See [Permissions](#permissions).
+
+### 9. Translations (optional)
+
+```bash
+php artisan vendor:publish --tag=export-builder-lang
+```
+
+Publishes `lang/en/export.php` and `lang/ar/export.php`. To customise the PDF template: `php artisan vendor:publish --tag=export-builder-views`.
 
 ---
 
@@ -122,7 +206,7 @@ class UserExport extends BaseExport
 }
 ```
 
-`page=user` resolves to `App\Tools\Export\UserExport`.
+`page=user` resolves to `App\Tools\Export\UserExport`. Only classes that extend `BaseExport` (or implement `BaseExportContract`) can be loaded.
 
 **Direct download in a controller:**
 
@@ -148,57 +232,53 @@ GET  api/export-log                                              ← history
 
 ## Configuration
 
-Publish and edit `config/export.php`:
+`config/export.php` (values shown are the defaults):
 
 ```php
 return [
     // Namespace where export classes live
     'namespace'  => 'App\\Tools\\Export',
 
-    // Translation file for column headings and bool values
-    // 'export' → package built-in (en + ar) — recommended
-    // 'my_file' → use your own lang/en/my_file.php
-    'trans_file' => 'export',
-
-    // Rows per chunk for lazyById() streaming (memory-safe)
+    // Rows per chunk for lazyById() streaming          (.env: EXPORT_CHUNK_SIZE)
     'chunk_size' => 500,
 
+    // Translations: 'export' → package files, 'api' → your lang/{locale}/api.php
+    'trans_file' => 'export',
+
     'pdf' => [
-        'settings'          => [],      // static: logo_url, company_name, etc.
-        'settings_resolver' => null,    // callable / invokable / [Class, 'method']
+        'settings'          => [],      // passed to the view as $settings (logo_url, company_name, ...)
+        'settings_resolver' => null,    // Closure / invokable class / [Class, 'method'] returning an array
     ],
 
     'module' => [
         'enabled' => true,
 
         'routes' => [
-            'enabled'      => true,
-            'middleware'   => ['api'],
-            'prefix'       => 'api',
-            'export_path'  => 'export',
-            'direct_path'  => 'export-direct',
-            'log_path'     => 'export-log',
-            'name_prefix'  => 'export-builder.export.',
+            'enabled'     => true,
+            'middleware'  => ['api'],   // add your auth middleware, e.g. 'auth:sanctum'
+            'prefix'      => 'api',
+            'export_path' => 'export',
+            'direct_path' => 'export-direct',
+            'log_path'    => 'export-log',
+            'name_prefix' => 'export-builder.export.',
         ],
 
-        'controllers' => [
-            'direct' => \HasanHawary\ExportBuilder\Http\Controllers\ExportController::class,
-            'jobs'   => \HasanHawary\ExportBuilder\Http\Controllers\ExportJobController::class,
-        ],
-
-        'services' => [
-            'export'      => \HasanHawary\ExportBuilder\Services\ExportService::class,
-            'export_file' => \HasanHawary\ExportBuilder\Services\ExportFileService::class,
-            'permissions' => \HasanHawary\ExportBuilder\Services\ExportPermissionResolver::class,
-        ],
+        'controllers' => [ /* override the package controllers */ ],
+        'services'    => [ /* override export / export_file / permissions services */ ],
 
         'storage' => [
-            'disk' => 'local',
-            'path' => 'exports',
+            'disk' => null,             // null → config('filesystems.default')  (.env: EXPORT_DISK)
+            'path' => 'exports',        //                                        (.env: EXPORT_PATH)
+        ],
+
+        'queue' => [
+            'connection' => null,       // null → default connection   (.env: EXPORT_QUEUE_CONNECTION)
+            'name'       => null,       // null → default queue        (.env: EXPORT_QUEUE)
         ],
 
         'permissions' => [
-            'enabled'   => false,
+            'enabled'   => false,       // (.env: EXPORT_PERMISSIONS)
+            'register'  => true,        // register abilities with hasanhawary/permission-manager
             'abilities' => [
                 'export'   => 'export',
                 'queue'    => 'create-export-file',
@@ -207,13 +287,14 @@ return [
                 'delete'   => 'delete-export-file',
             ],
             'pages' => [
-                // Per-page ability overrides:
-                // 'user' => ['export' => 'export-user', 'queue' => 'queue-user'],
+                // 'user' => ['export' => 'export-user', 'queue' => 'export-user'],
             ],
         ],
     ],
 ];
 ```
+
+**Upgrading:** a config published by an older version keeps working. Keys it does not have (`queue`, `permissions.register`) fall back to the defaults above, and an explicit `storage.disk` (e.g. `'local'`) is still used as-is.
 
 ---
 
@@ -549,11 +630,9 @@ GET api/export-log?type=user&start=2026-01-01&end=2026-01-31&page=2
 
 Empty values and invalid dates are ignored. The list is always limited to the exports the current user may see, and filters only narrow that further (see [Permissions](#permissions)).
 
-Files are stored on the configured disk:
+Files are stored on `storage.disk` (your app's default disk when not set) under `storage.path`, as `exports/{id}_{file-name}`, so two exports with the same name never overwrite each other. The download keeps the readable `file_name`.
 
-```php
-'storage' => ['disk' => 'local', 'path' => 'exports'],
-```
+If a stored file was removed from the disk, `GET api/export-log/{id}/download` answers `404`.
 
 ---
 
@@ -722,7 +801,7 @@ The package ships with English and Arabic translations for column headings and b
 'trans_file' => 'my_exports',  // looks up lang/en/my_exports.php keys
 ```
 
-**Add custom column translations** — add keys to your published `lang/vendor/export/en/export.php`:
+**Add custom column translations** — add keys to your published `lang/en/export.php` (and `lang/ar/export.php`):
 
 ```php
 return [
@@ -786,7 +865,12 @@ The test suite covers:
 - `AdvancedFilter` security allowlist, relation filters, enum resolver, error recovery
 - `HelperTrait::convertValue` — all 10+ type branches and edge cases
 - `ExportBuilder::buildFileName` — naming consistency between direct and queued paths
-- Storage config SSOT via `storageDisk()` / `storagePath()`
+- Storage config SSOT via `storageDisk()` / `storagePath()`, default-disk fallback
+- Queued job: unique file path per export, temp-file cleanup, failure status, queue config
+- Safe download (`404` for missing files), `file_url` on disks without URL support
+- Export history filters, ownership scoping, `view-all` / `view-own` rules, unseeded permissions
+- permission-manager auto-registration
+- `wrapPaginate()` page sizes and metadata
 - Architecture regression guards (SSOT fixes)
 - Edge cases: morph, nested relations, `customWith`, `customSelect`, PDF resolver variants
 

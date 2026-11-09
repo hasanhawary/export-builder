@@ -2,6 +2,7 @@
 
 namespace HasanHawary\ExportBuilder;
 
+use HasanHawary\ExportBuilder\Contracts\BaseExportContract;
 use HasanHawary\ExportBuilder\Renderers\ExcelRenderer;
 use HasanHawary\ExportBuilder\Renderers\PdfRenderer;
 use Illuminate\Support\Facades\Log;
@@ -47,7 +48,8 @@ class ExportBuilder
 
         $class = $this->buildExportPath($page);
 
-        if (! class_exists($class)) {
+        // "page" comes from the request: only real export classes may be instantiated.
+        if (! class_exists($class) || ! is_subclass_of($class, BaseExportContract::class)) {
             abort(404, "Export class not found for page: {$page}");
         }
 

@@ -54,13 +54,15 @@ final class PdfRenderer
         $pdf      = PDF::loadHTML($html);
         $fileName = ExportBuilder::buildFileName($this->filter, 'pdf');
 
-        $tempFile = tempnam(sys_get_temp_dir(), 'eb_pdf_') . '.pdf';
+        // Write into the file tempnam() created (appending ".pdf" used to leave that file behind),
+        // and delete it once the response has been sent.
+        $tempFile = tempnam(sys_get_temp_dir(), 'eb_pdf_');
         file_put_contents($tempFile, $pdf->output());
 
-        return new BinaryFileResponse($tempFile, 200, [
+        return (new BinaryFileResponse($tempFile, 200, [
             'Content-Type'        => 'application/pdf',
             'Content-Disposition' => "attachment; filename=\"{$fileName}\"",
-        ]);
+        ]))->deleteFileAfterSend(true);
     }
 
     /**

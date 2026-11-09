@@ -13,7 +13,6 @@ use HasanHawary\ExportBuilder\Concerns\HasRelations;
 use HasanHawary\ExportBuilder\Concerns\HelperTrait;
 use HasanHawary\ExportBuilder\Contracts\BaseExportContract;
 use HasanHawary\ExportBuilder\Support\ExportHelper;
-use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Arr;
 use Illuminate\Support\Str;
 use Maatwebsite\Excel\Concerns\FromCollection;
@@ -72,9 +71,6 @@ abstract class BaseExport implements BaseExportContract, FromCollection, WithMap
 
     /** Cache for detectForeignKeys() — computed once per instance */
     private ?array $detectedForeignKeys = null;
-
-    /** Cache for buildQuery() — assembled once, reused by collection() and pdfData() */
-    private ?Builder $builtQuery = null;
 
     // -------------------------------------------------------------------------
     // Constructor

@@ -50,7 +50,7 @@ class ExportFileService
 
     public function delete(ExportFile $export): bool
     {
-        $disk = $export->disk ?: $this->storageDisk();
+        $disk = $this->diskFor($export);
 
         if ($export->file_path && Storage::disk($disk)->exists($export->file_path)) {
             Storage::disk($disk)->delete($export->file_path);
@@ -60,12 +60,29 @@ class ExportFileService
     }
 
     /**
-     * The configured storage disk for export files.
+     * Storage path for a finished export. The export id keeps two exports with the
+     * same file name (same page, same minute) from overwriting each other.
+     */
+    public function pathFor(ExportFile $export, string $name): string
+    {
+        return $this->storagePath() . '/' . $export->getKey() . '_' . $name;
+    }
+
+    /**
+     * The disk a record was stored on, falling back to the configured disk.
+     */
+    public function diskFor(ExportFile $export): string
+    {
+        return $export->disk ?: $this->storageDisk();
+    }
+
+    /**
+     * The configured storage disk for export files, or the app's default filesystem disk.
      * Single source of truth — all callers use this instead of reading config directly.
      */
     public function storageDisk(): string
     {
-        return (string) (config('export.module.storage.disk') ?: 'local');
+        return (string) (config('export.module.storage.disk') ?: config('filesystems.default') ?: 'local');
     }
 
     /**

@@ -18,12 +18,14 @@ class ExportRequest extends FormRequest
     public function rules(): array
     {
         return [
-            'page'          => ['required', 'string'],
+            'page'          => ['required', 'string', 'max:255'],
             'format'        => ['nullable', 'string', Rule::in(['xlsx', 'xls', 'csv', 'pdf'])],
             'start'         => ['nullable', 'date'],
             'end'           => ['nullable', 'date', 'after_or_equal:start'],
             'columns'       => ['sometimes', 'array'],
+            'columns.*'     => ['string'],
             'related'       => ['sometimes', 'array'],
+            'related.*'     => ['string'],
             'related_type'  => ['sometimes', 'string'],
             'filename'      => ['sometimes', 'string', 'max:255'],
             'timestamp'     => ['sometimes', 'string', 'max:50'],

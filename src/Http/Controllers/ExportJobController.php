@@ -70,16 +70,19 @@ class ExportJobController extends Controller
         return response()->json(['data' => new ExportFileResource($export)]);
     }
 
-    public function download(Request $request, int $exportFile, ExportPermissionResolver $permissions): StreamedResponse
+    public function download(Request $request, int $exportFile, ExportPermissionResolver $permissions, ExportFileService $service): StreamedResponse
     {
         $export = ExportFile::findOrFail($exportFile);
 
         abort_unless($permissions->canView($request->user(), $export), 403);
         abort_unless($export->file_path, 404);
 
-        $disk = $export->disk ?: config('export.module.storage.disk', 'local');
+        $disk = Storage::disk($service->diskFor($export));
 
-        return Storage::disk($disk)->download($export->file_path, $export->file_name);
+        // The record can outlive its file (cleaned-up disk, moved storage): 404, not 500.
+        abort_unless($disk->exists($export->file_path), 404);
+
+        return $disk->download($export->file_path, $export->file_name ?: basename($export->file_path));
     }
 
 }

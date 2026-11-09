@@ -47,12 +47,40 @@ class WrapPaginateTest extends TestCase
         $query->expects($this->once())->method('paginate')->with(2)->willReturn($paginator);
 
         $result = wrapPaginate($query, WrapPaginateResource::class, ['data' => 'overwrite', 'label' => 'Records']);
-        $body = $result->toResponse($request)->getData(true);
 
+        // Same shape as before (paginator under "data"), but items go through the resource.
+        $this->assertSame('Records', $result['label']);
+        $this->assertSame($paginator, $result['data']);
+
+        $body = json_decode(json_encode($result['data']), true);
         $this->assertSame([['identifier' => 1]], $body['data']);
-        $this->assertSame(3, $body['meta']['total']);
-        $this->assertArrayHasKey('next', $body['links']);
-        $this->assertSame('Records', $body['label']);
+        $this->assertSame(3, $body['total']);
+        $this->assertSame(2, $body['per_page']);
+    }
+
+    public function test_resource_is_applied_when_paginating_without_metadata(): void
+    {
+        $this->app->instance('request', Request::create('/', 'GET', ['per_page' => '1']));
+        $paginator = new LengthAwarePaginator(collect([['id' => 7]]), 1, 1);
+        $query = $this->getMockBuilder(Builder::class)->disableOriginalConstructor()->onlyMethods(['paginate'])->getMock();
+        $query->expects($this->once())->method('paginate')->with(1)->willReturn($paginator);
+
+        $result = wrapPaginate($query, WrapPaginateResource::class);
+
+        $this->assertInstanceOf(LengthAwarePaginator::class, $result);
+        $this->assertSame([['identifier' => 7]], json_decode(json_encode($result), true)['data']);
+    }
+
+    public function test_without_page_size_config_missing_per_page_returns_everything(): void
+    {
+        config()->set('project.pagination.per_page', null);
+        $this->app->instance('request', Request::create('/', 'GET'));
+        $items = collect([['id' => 1]]);
+        $query = $this->getMockBuilder(Builder::class)->disableOriginalConstructor()->onlyMethods(['paginate', 'get'])->getMock();
+        $query->expects($this->never())->method('paginate');
+        $query->expects($this->once())->method('get')->willReturn($items);
+
+        $this->assertSame($items, wrapPaginate($query));
     }
 }
 

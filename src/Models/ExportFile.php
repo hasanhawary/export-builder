@@ -3,10 +3,12 @@
 namespace HasanHawary\ExportBuilder\Models;
 
 use HasanHawary\ExportBuilder\Enums\ExportStatus;
+use HasanHawary\ExportBuilder\Services\ExportFileService;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\MorphTo;
 use Illuminate\Database\Eloquent\SoftDeletes;
 use Illuminate\Support\Facades\Storage;
+use Throwable;
 
 class ExportFile extends Model
 {
@@ -51,10 +53,12 @@ class ExportFile extends Model
             return null;
         }
 
-        // Resolve disk from the record itself; fall back to the service default via config.
-        // The model intentionally avoids injecting ExportFileService to stay framework-lightweight.
-        $disk = $this->disk ?: (string) config('export.module.storage.disk', 'local');
-
-        return Storage::disk($disk)->url($this->file_path);
+        try {
+            return Storage::disk(app(ExportFileService::class)->diskFor($this))->url($this->file_path);
+        } catch (Throwable) {
+            // Some disks (ftp, sftp, private local disks) cannot build URLs.
+            // A missing link must not break the whole export history listing.
+            return null;
+        }
     }
 }

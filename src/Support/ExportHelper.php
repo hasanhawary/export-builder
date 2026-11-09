@@ -44,22 +44,22 @@ final class ExportHelper
             return '---';
         }
 
-        app()->setLocale($lang ?? app()->getLocale());
-
         $key = $snaked ? Str::snake((string) $trans) : (string) $trans;
+
+        // Look up in the requested locale only; never change the app's locale for the rest of the request.
+        $locale = $lang ?: null;
 
         // Package namespace lookup (e.g. 'export' → 'export::export.{key}')
         if (! str_contains($page, '::') && ! str_contains($page, '.')) {
-            $namespacedKey = "{$page}::{$page}.{$key}";
-            $translated    = __($namespacedKey);
-            if (! Str::startsWith($translated, "{$page}::")) {
+            $translated = __("{$page}::{$page}.{$key}", [], $locale);
+            if (is_string($translated) && ! Str::startsWith($translated, "{$page}::")) {
                 return $translated;
             }
         }
 
         // Flat file lookup (e.g. 'api.{key}')
-        $translated = __("{$page}.{$key}");
+        $translated = __("{$page}.{$key}", [], $locale);
 
-        return Str::startsWith($translated, "{$page}.") ? (string) $trans : $translated;
+        return ! is_string($translated) || Str::startsWith($translated, "{$page}.") ? (string) $trans : $translated;
     }
 }
