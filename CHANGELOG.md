@@ -5,7 +5,9 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) — [Semantic V
 
 ---
 
-## [Unreleased]
+## [3.0.0] - 2026-11-10
+
+> Upgrading from 2.x: read **Breaking Changes** below. Projects that override `ExportJobController` / `ExportToFile` with the 2.4.3 signatures keep working.
 
 ### Breaking Changes (check before upgrading)
 - **Routes require login by default**: `routes.middleware` is now `['api', 'auth:sanctum']` (`['api', 'auth']` without Sanctum). A published config keeps its own middleware.
